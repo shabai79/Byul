@@ -6,9 +6,11 @@ const cookieParser = require('cookie-parser');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { msg, SUPPORTED } = require('./lib/messages');
 
 const PORT = process.env.PORT || 3000;
 const FEE_RATE = Number(process.env.FEE_RATE || 0.1); // 플랫폼 수수료 10%
+const CATEGORIES = ['electronics', 'id', 'wallet', 'bag', 'camera', 'jewelry', 'clothing', 'pet', 'keepsake', 'other'];
 const DB_FILE = path.join(__dirname, 'data', 'db.json');
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
@@ -39,10 +41,12 @@ function distanceKm(a, b) {
 // 서비스 밖 직접 연락 차단: 전화번호·이메일·메신저 ID·URL 마스킹
 function maskContacts(text) {
   return String(text)
-    .replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '[연락처 비공개]')
-    .replace(/(\+?\d[\d\s().-]{7,}\d)/g, '[연락처 비공개]')
-    .replace(/https?:\/\/\S+|www\.\S+/gi, '[링크 비공개]')
-    .replace(/(카톡|카카오톡|kakao|라인|line|whatsapp|왓츠앱|텔레그램|telegram|wechat|위챗|instagram|인스타)\s*(id|아이디)?\s*[:：]?\s*@?[\w.-]{3,}/gi, '[연락처 비공개]');
+    .replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '[[contact]]')
+    .replace(/(\+?\d[\d\s().-]{7,}\d)/g, '[[contact]]')
+    .replace(/https?:\/\/\S+|www\.\S+/gi, '[[link]]')
+    // 메신저 ID: 확실한 메신저 이름은 바로 뒤 ID까지, 'line'·'qq'처럼 일반 단어와 겹치는 이름은 'id' 또는 ':'가 있을 때만
+    .replace(/(?<![A-Za-z])(카톡|카카오톡|카카오|kakao(?:talk)?|カカオ|whatsapp|왓츠앱|텔레그램|telegram|wechat|위챗|微信|weixin|instagram|insta|인스타|インスタ|라인|ライン)\s*(id|아이디|号)?\s*[:：]?\s*@?[\w.-]{3,}/gi, '[[contact]]')
+    .replace(/(?<![A-Za-z])(line|qq)\s*(?:id\s*[:：]?|[:：])\s*@?[\w.-]{3,}/gi, '[[contact]]');
 }
 const publicUser = (u) => u && { id: u.id, name: u.name };
 const userById = (uid) => db.users.find((u) => u.id === uid);
@@ -73,8 +77,8 @@ app.use((req, _res, next) => {
   req.user = s ? userById(s.userId) : null;
   next();
 });
-const auth = (req, res, next) => (req.user ? next() : res.status(401).json({ error: '로그인이 필요합니다.' }));
-const bad = (res, msg, code = 400) => res.status(code).json({ error: msg });
+const auth = (req, res, next) => (req.user ? next() : bad(req, res, 'loginRequired', 401));
+const bad = (req, res, key, code = 400) => res.status(code).json({ error: msg(req, key), code: key });
 
 function startSession(res, user) {
   const token = crypto.randomBytes(32).toString('hex');
@@ -86,8 +90,8 @@ function startSession(res, user) {
 // ----- 인증 -----
 app.post('/api/signup', (req, res) => {
   const { name, email, password } = req.body || {};
-  if (!name || !email || !password || password.length < 6) return bad(res, '이름, 이메일, 6자 이상 비밀번호를 입력하세요.');
-  if (db.users.some((u) => u.email === email.toLowerCase())) return bad(res, '이미 가입된 이메일입니다.');
+  if (!name || !email || !password || password.length < 6) return bad(req, res, 'signupInvalid');
+  if (db.users.some((u) => u.email === email.toLowerCase())) return bad(req, res, 'emailTaken');
   const user = { id: id(), name: String(name).slice(0, 40), email: email.toLowerCase(), password: hashPassword(password), createdAt: now() };
   db.users.push(user);
   startSession(res, user);
@@ -96,7 +100,7 @@ app.post('/api/signup', (req, res) => {
 app.post('/api/login', (req, res) => {
   const { email, password } = req.body || {};
   const user = db.users.find((u) => u.email === String(email || '').toLowerCase());
-  if (!user || !checkPassword(String(password || ''), user.password)) return bad(res, '이메일 또는 비밀번호가 틀렸습니다.', 401);
+  if (!user || !checkPassword(String(password || ''), user.password)) return bad(req, res, 'badLogin', 401);
   startSession(res, user);
   res.json(publicUser(user));
 });
@@ -124,18 +128,19 @@ app.get('/api/posts', (req, res) => {
 });
 app.get('/api/posts/:id', (req, res) => {
   const p = db.posts.find((x) => x.id === req.params.id);
-  p ? res.json(publicPost(p)) : bad(res, '게시글이 없습니다.', 404);
+  p ? res.json(publicPost(p)) : bad(req, res, 'postNotFound', 404);
 });
 app.post('/api/posts', auth, upload.array('photos', 4), (req, res) => {
   const b = req.body;
   const lat = Number(b.lat), lng = Number(b.lng);
   if (!b.title || Number.isNaN(lat) || Number.isNaN(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180)
-    return bad(res, '물건 이름과 지도 위치는 필수입니다.');
+    return bad(req, res, 'postInvalid');
   const post = {
     id: id(),
     ownerId: req.user.id,
     title: String(b.title).slice(0, 80),
-    category: b.category || '기타',
+    category: CATEGORIES.includes(b.category) ? b.category : 'other',
+    lang: SUPPORTED.includes(b.lang) ? b.lang : 'en', // 작성 언어 (번역 버튼 표시용)
     description: maskContacts(b.description || '').slice(0, 2000),
     story: maskContacts(b.story || '').slice(0, 4000),
     lat, lng,
@@ -154,7 +159,7 @@ app.post('/api/posts', auth, upload.array('photos', 4), (req, res) => {
 });
 app.patch('/api/posts/:id', auth, (req, res) => {
   const p = db.posts.find((x) => x.id === req.params.id);
-  if (!p || p.ownerId !== req.user.id) return bad(res, '권한이 없습니다.', 403);
+  if (!p || p.ownerId !== req.user.id) return bad(req, res, 'forbidden', 403);
   if (req.body.status === 'closed') p.status = 'closed';
   save();
   res.json(publicPost(p));
@@ -163,7 +168,7 @@ app.patch('/api/posts/:id', auth, (req, res) => {
 // ----- 여행 일정 (그 지역에 가는 사람에게 주변 분실물 추천) -----
 app.post('/api/trips', auth, (req, res) => {
   const { placeName, lat, lng, startDate, endDate, radiusKm = 30 } = req.body || {};
-  if (lat == null || lng == null) return bad(res, '여행지 위치를 지도에서 선택하세요.');
+  if (lat == null || lng == null) return bad(req, res, 'tripInvalid');
   const trip = { id: id(), userId: req.user.id, placeName, lat: +lat, lng: +lng, startDate, endDate, radiusKm: +radiusKm, createdAt: now() };
   db.trips.push(trip);
   save();
@@ -200,8 +205,8 @@ function threadView(t, me) {
 }
 app.post('/api/posts/:id/threads', auth, (req, res) => {
   const post = db.posts.find((p) => p.id === req.params.id);
-  if (!post) return bad(res, '게시글이 없습니다.', 404);
-  if (post.ownerId === req.user.id) return bad(res, '본인 게시글입니다.');
+  if (!post) return bad(req, res, 'postNotFound', 404);
+  if (post.ownerId === req.user.id) return bad(req, res, 'ownPost');
   let t = db.threads.find((x) => x.postId === post.id && x.helperId === req.user.id);
   if (!t) {
     t = { id: id(), postId: post.id, ownerId: post.ownerId, helperId: req.user.id, createdAt: now() };
@@ -217,7 +222,7 @@ app.get('/api/threads', auth, (req, res) => {
 });
 function myThread(req, res) {
   const t = db.threads.find((x) => x.id === req.params.id);
-  if (!t || (t.ownerId !== req.user.id && t.helperId !== req.user.id)) { bad(res, '대화방이 없습니다.', 404); return null; }
+  if (!t || (t.ownerId !== req.user.id && t.helperId !== req.user.id)) { bad(req, res, 'threadNotFound', 404); return null; }
   return t;
 }
 app.get('/api/threads/:id/messages', auth, (req, res) => {
@@ -227,7 +232,7 @@ app.get('/api/threads/:id/messages', auth, (req, res) => {
 app.post('/api/threads/:id/messages', auth, (req, res) => {
   const t = myThread(req, res); if (!t) return;
   const text = String(req.body?.text || '').trim();
-  if (!text) return bad(res, '내용을 입력하세요.');
+  if (!text) return bad(req, res, 'emptyMessage');
   const masked = maskContacts(text).slice(0, 2000);
   const m = { id: id(), threadId: t.id, senderId: req.user.id, text: masked, createdAt: now() };
   db.messages.push(m);
@@ -243,9 +248,9 @@ function deal(req, res) {
 }
 app.post('/api/threads/:id/deal', auth, (req, res) => {
   const { t, d, post } = deal(req, res); if (!t) return;
-  if (t.ownerId !== req.user.id) return bad(res, '분실자만 거래를 시작할 수 있습니다.', 403);
-  if (d) return bad(res, '이미 거래가 진행 중입니다.');
-  if (post.status !== 'open') return bad(res, '이미 다른 사람과 진행 중인 게시글입니다.');
+  if (t.ownerId !== req.user.id) return bad(req, res, 'ownerOnly', 403);
+  if (d) return bad(req, res, 'dealExists');
+  if (post.status !== 'open') return bad(req, res, 'postTaken');
   const reward = Math.max(0, Math.round(Number(req.body?.reward ?? post.reward)));
   const shippingCost = Math.max(0, Math.round(Number(req.body?.shippingCost) || 0));
   const fee = Math.round(reward * FEE_RATE);
@@ -264,10 +269,10 @@ const transitions = {
 app.post('/api/threads/:id/deal/:action', auth, (req, res) => {
   const { t, d, post } = deal(req, res); if (!t) return;
   const tr = transitions[req.params.action];
-  if (!d || !tr) return bad(res, '잘못된 요청입니다.');
+  if (!d || !tr) return bad(req, res, 'badRequest');
   const role = t.ownerId === req.user.id ? 'owner' : 'helper';
-  if (tr.who !== 'any' && tr.who !== role) return bad(res, '이 단계는 상대방이 진행해야 합니다.', 403);
-  if (d.status !== tr.from) return bad(res, `현재 상태(${d.status})에서는 할 수 없습니다.`);
+  if (tr.who !== 'any' && tr.who !== role) return bad(req, res, 'otherParty', 403);
+  if (d.status !== tr.from) return bad(req, res, 'wrongState');
   // TODO: 실서비스에서는 여기서 PG(토스페이먼츠·Stripe Connect 등) 결제/정산 API를 호출
   d.status = tr.to;
   if (req.body?.trackingNo) d.trackingNo = String(req.body.trackingNo).slice(0, 60);

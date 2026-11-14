@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Byul · 세계 어디서든 잃어버린 물건 찾기</title>
+  <title>Byul</title>
   <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
   <link rel="stylesheet" href="/style.css" />
 </head>
@@ -11,9 +11,10 @@
   <header>
     <a class="logo" href="#map">✦ Byul</a>
     <nav>
-      <a href="#map">지도</a>
-      <a href="#trips">내 여행</a>
-      <a href="#inbox">메시지</a>
+      <a href="#map" data-i18n="nav.map"></a>
+      <a href="#trips" data-i18n="nav.trips"></a>
+      <a href="#inbox" data-i18n="nav.inbox"></a>
+      <select id="langSel" aria-label="Language"></select>
       <span id="userBox"></span>
     </nav>
   </header>
@@ -22,11 +23,9 @@
     <!-- 지도 + 목록 -->
     <section id="view-map" class="view">
       <div class="toolbar">
-        <input id="q" placeholder="물건, 장소, 나라 검색 (예: 여권, 파리, 카메라)" />
-        <select id="cat">
-          <option value="">전체 분류</option>
-        </select>
-        <button id="newPostBtn" class="primary">+ 분실물 등록</button>
+        <input id="q" data-i18n-ph="search.ph" />
+        <select id="cat"></select>
+        <button id="newPostBtn" class="primary" data-i18n="btn.newPost"></button>
       </div>
       <div class="split">
         <div id="map"></div>
@@ -36,37 +35,37 @@
 
     <!-- 여행 일정 -->
     <section id="view-trips" class="view hidden">
-      <h2>내 여행 일정</h2>
-      <p class="muted">가실 곳을 등록하면 그 주변에서 누군가 잃어버린 물건을 알려드려요. 찾아주면 사례금을 받을 수 있어요.</p>
+      <h2 data-i18n="trips.title"></h2>
+      <p class="muted" data-i18n="trips.desc"></p>
       <form id="tripForm" class="panel">
-        <label>여행지 이름 <input name="placeName" required placeholder="예: 바르셀로나 사그라다 파밀리아" /></label>
+        <label><span data-i18n="trips.place"></span> <input name="placeName" required data-i18n-ph="trips.placePh" /></label>
         <div class="row">
-          <label>출발 <input type="date" name="startDate" /></label>
-          <label>도착 <input type="date" name="endDate" /></label>
-          <label>반경(km) <input type="number" name="radiusKm" value="30" min="1" max="500" /></label>
+          <label><span data-i18n="trips.start"></span> <input type="date" name="startDate" /></label>
+          <label><span data-i18n="trips.end"></span> <input type="date" name="endDate" /></label>
+          <label><span data-i18n="trips.radius"></span> <input type="number" name="radiusKm" value="30" min="1" max="500" /></label>
         </div>
         <div id="tripMap" class="minimap"></div>
-        <p class="muted small">지도를 클릭해 여행지 위치를 선택하세요.</p>
-        <button class="primary">여행 등록</button>
+        <p class="muted small" data-i18n="trips.pickHint"></p>
+        <button class="primary" data-i18n="trips.submit"></button>
       </form>
       <div id="tripList"></div>
     </section>
 
     <!-- 메시지함 -->
     <section id="view-inbox" class="view hidden">
-      <h2>메시지</h2>
-      <p class="muted small">안전을 위해 모든 연락은 Byul 안에서만 이루어지며, 전화번호·이메일·메신저 ID는 자동으로 가려집니다.</p>
+      <h2 data-i18n="inbox.title"></h2>
+      <p class="muted small" data-i18n="inbox.notice"></p>
       <div class="inbox">
         <ul id="threadList" class="threads"></ul>
-        <div id="chat" class="chat"><p class="muted">대화를 선택하세요.</p></div>
+        <div id="chat" class="chat"><p class="muted" data-i18n="inbox.select"></p></div>
       </div>
     </section>
   </main>
 
-  <!-- 모달 -->
   <dialog id="modal"><div id="modalBody"></div></dialog>
 
   <script src="/vendor/leaflet/leaflet.js"></script>
+  <script src="/i18n.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

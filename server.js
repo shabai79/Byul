@@ -11,8 +11,11 @@ const { msg, SUPPORTED } = require('./lib/messages');
 const PORT = process.env.PORT || 3000;
 const FEE_RATE = Number(process.env.FEE_RATE || 0.1); // 플랫폼 수수료 10%
 const CATEGORIES = ['electronics', 'id', 'wallet', 'bag', 'camera', 'jewelry', 'clothing', 'pet', 'keepsake', 'other'];
-const DB_FILE = path.join(__dirname, 'data', 'db.json');
-const UPLOAD_DIR = path.join(__dirname, 'uploads');
+// DATA_DIR: 배포 시 영구 디스크 경로를 지정하면 재시작해도 데이터가 남습니다.
+const DATA_DIR = process.env.DATA_DIR || __dirname;
+const DB_FILE = path.join(DATA_DIR, 'data', 'db.json');
+const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
+const PROD = process.env.NODE_ENV === 'production';
 fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -56,6 +59,7 @@ function publicPost(p) {
 
 // ---------- 앱 ----------
 const app = express();
+app.set('trust proxy', 1); // Render 등 HTTPS 프록시 뒤에서 동작
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -84,7 +88,7 @@ function startSession(res, user) {
   const token = crypto.randomBytes(32).toString('hex');
   db.sessions.push({ token, userId: user.id, createdAt: now() });
   save();
-  res.cookie('sid', token, { httpOnly: true, sameSite: 'lax', maxAge: 30 * 864e5 });
+  res.cookie('sid', token, { httpOnly: true, sameSite: 'lax', secure: PROD, maxAge: 30 * 864e5 });
 }
 
 // ----- 인증 -----
@@ -283,7 +287,22 @@ app.post('/api/threads/:id/deal/:action', auth, (req, res) => {
   res.json(d);
 });
 
+app.get('/healthz', (_req, res) => res.send('ok'));
 app.get('/api/config', (_req, res) => res.json({ feeRate: FEE_RATE }));
 
-if (require.main === module) app.listen(PORT, () => console.log(`Byul running on http://localhost:${PORT}`));
+// 빈 서버로 시작하면 둘러볼 수 있게 예시 글을 넣음 (SEED_DEMO=1)
+function seedDemo() {
+  if (process.env.SEED_DEMO !== '1' || db.posts.length) return;
+  const demo = { id: id(), name: 'Byul Demo', email: 'demo@byul.app', password: hashPassword('demo1234'), createdAt: now() };
+  db.users.push(demo);
+  const P = (title, category, lat, lng, placeName, country, reward, story, lang) =>
+    db.posts.push({ id: id(), ownerId: demo.id, title, category, lang, description: '', story, lat, lng, placeName, country, lostDate: null, reward, currency: 'KRW', photos: [], status: 'open', createdAt: now() });
+  P('검정 소니 카메라', 'camera', 48.8606, 2.3376, '루브르 박물관', '프랑스', 200000, '신혼여행 사진이 전부 들어있어요. 메모리카드만이라도 찾고 싶어요.', 'ko');
+  P('여권 지갑', 'id', 35.6909, 139.7003, '신주쿠역 동쪽 출구', '일본', 50000, '귀국 전날 잃어버렸어요.', 'ko');
+  P('할머니가 주신 반지', 'jewelry', 41.4036, 2.1744, '사그라다 파밀리아', '스페인', 300000, '할머니 유품입니다. 작은 진주가 박혀 있어요.', 'ko');
+  P('Blue backpack with laptop', 'bag', 37.5547, 126.9707, 'Seoul Station, airport railroad gate', 'South Korea', 150000, 'Left it on a bench before boarding the AREX. Thesis files inside!', 'en');
+  save();
+}
+
+if (require.main === module) seedDemo(), app.listen(PORT, () => console.log(`Byul running on http://localhost:${PORT}`));
 module.exports = { app, maskContacts, distanceKm };

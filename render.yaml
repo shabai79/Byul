@@ -1,0 +1,17 @@
+# Render 원클릭 배포 설정 (https://render.com)
+services:
+  - type: web
+    name: byul
+    runtime: node
+    plan: free
+    branch: claude/lost-item-finder-service-q0qg70
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: FEE_RATE
+        value: "0.1"
+      - key: SEED_DEMO
+        value: "1"

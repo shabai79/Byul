@@ -12,6 +12,20 @@ npm start        # http://localhost:3000
 npm test         # 전체 흐름 자동 테스트
 ```
 
+## 링크로 공유하기 (Render 무료 배포)
+
+1. https://render.com 에 GitHub 계정으로 가입/로그인
+2. **New + → Blueprint** → `shabai79/byul` 저장소 선택 (처음이면 GitHub 접근 허용)
+3. `render.yaml`을 자동으로 읽어서 설정이 채워짐 → **Apply**
+4. 몇 분 뒤 `https://byul-xxxx.onrender.com` 주소가 생김 → 이 링크를 공유
+
+데모 계정: `demo@byul.app` / `demo1234` (예시 분실물 4개가 자동으로 들어감)
+
+무료 요금제 주의점
+- 15분 동안 접속이 없으면 잠들고, 다음 접속 때 깨어나는 데 30초~1분 걸림
+- 다시 배포하거나 재시작하면 **올린 글·사진·대화가 초기화**됨 (예시 글은 다시 생김)
+- 데이터를 남기려면: 유료 플랜(월 $7~)에서 Disk를 `/var/data`에 붙이고 환경변수 `DATA_DIR=/var/data` 추가
+
 ## MVP 기능
 
 | 기능 | 설명 |

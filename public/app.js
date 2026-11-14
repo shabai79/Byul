@@ -2,7 +2,6 @@
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const CATEGORIES = ['electronics', 'id', 'wallet', 'bag', 'camera', 'jewelry', 'clothing', 'pet', 'keepsake', 'other'];
-const ICON = { electronics: '📱', id: '🛂', wallet: '👛', bag: '🎒', camera: '📷', jewelry: '💍', clothing: '🧥', pet: '🐾', keepsake: '💌', other: '📦' };
 const DEAL_STEPS = ['proposed', 'paid', 'shipped', 'completed'];
 const catName = (c) => (CATEGORIES.includes(c) ? t('cat.' + c) : c);
 let me = null, feeRate = 0.1, map, markers;
@@ -24,11 +23,11 @@ const fmtDate = (d) => (d ? new Date(d + 'T00:00:00').toLocaleDateString(locale(
 const fmtTime = (d) => new Date(d).toLocaleString(locale());
 // 사용자 글: HTML 이스케이프 후 서버가 가린 연락처 표시를 현재 언어로 바꿈
 const userText = (s) => esc(s)
-  .replace(/\[\[contact\]\]/g, `<span class="masked">🔒 ${t('mask.contact')}</span>`)
-  .replace(/\[\[link\]\]/g, `<span class="masked">🔒 ${t('mask.link')}</span>`);
+  .replace(/\[\[contact\]\]/g, `<span class="masked">${icon('lock')}${t('mask.contact')}</span>`)
+  .replace(/\[\[link\]\]/g, `<span class="masked">${icon('lock')}${t('mask.link')}</span>`);
 // 사용자 글 번역: 지금은 Google 번역을 새 창으로 열기 (API 키 없이 동작). 추후 DeepL/Papago API로 화면 내 번역 가능.
 const translateUrl = (text) => `https://translate.google.com/?sl=auto&tl=${lang === 'zh' ? 'zh-CN' : lang}&op=translate&text=${encodeURIComponent(text.replace(/\[\[(contact|link)\]\]/g, '***'))}`;
-const translateLink = (text, cls = '') => `<a class="translate ${cls}" target="_blank" rel="noopener" href="${esc(translateUrl(text))}">${t('btn.translate')}</a>`;
+const translateLink = (text, cls = '') => `<a class="translate ${cls}" target="_blank" rel="noopener" href="${esc(translateUrl(text))}">${icon('translate')}${t('btn.translate')}</a>`;
 
 const modal = $('#modal');
 function openModal(html) { $('#modalBody').innerHTML = html; modal.showModal(); }
@@ -37,7 +36,7 @@ modal.addEventListener('click', (e) => { if (e.target === modal || e.target.data
 // ---------- 언어 ----------
 function renderLangUI() {
   applyStatic();
-  $('#langSel').innerHTML = Object.entries(LANGS).map(([c, n]) => `<option value="${c}" ${c === lang ? 'selected' : ''}>🌐 ${n}</option>`).join('');
+  $('#langSel').innerHTML = Object.entries(LANGS).map(([c, n]) => `<option value="${c}" ${c === lang ? 'selected' : ''}>${n}</option>`).join('');
   renderChips();
   renderUser();
 }
@@ -71,16 +70,18 @@ const requireLogin = (fn) => (me ? fn() : showLogin(fn));
 // ---------- 지도 ----------
 function makeMap(el, center = [30, 10], zoom = 2) {
   const m = L.map(el, { worldCopyJump: true }).setView(center, zoom);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(m);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 19, subdomains: 'abcd', attribution: '&copy; OpenStreetMap &copy; CARTO' }).addTo(m);
   return m;
 }
 async function geocode(q) { // OpenStreetMap Nominatim 장소 검색 (결과 이름은 현재 언어로)
   const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=${lang}&q=` + encodeURIComponent(q));
   const [hit] = await r.json(); return hit && { lat: +hit.lat, lng: +hit.lon, name: hit.display_name };
 }
+// 잉크색 물방울 핀 (기본 파란 핀 대신)
+const inkIcon = (cat = 'pin') => L.divIcon({ className: '', html: `<div class="mk"><span>${icon(cat)}</span></div>`, iconSize: [34, 42], iconAnchor: [17, 40], tooltipAnchor: [0, -34] });
 function pinPicker(el, onPick) {
   const m = makeMap(el); let pin;
-  const set = (lat, lng) => { pin ? pin.setLatLng([lat, lng]) : (pin = L.marker([lat, lng]).addTo(m)); onPick(lat, lng); };
+  const set = (lat, lng) => { pin ? pin.setLatLng([lat, lng]) : (pin = L.marker([lat, lng], { icon: inkIcon() }).addTo(m)); onPick(lat, lng); };
   m.on('click', (e) => set(e.latlng.lat, e.latlng.lng));
   setTimeout(() => m.invalidateSize(), 50);
   return { map: m, set };
@@ -98,7 +99,7 @@ function ago(iso) {
 const fmtKm = (d) => (d < 10 ? d.toLocaleString(locale(), { maximumFractionDigits: 1 }) : Math.round(d).toLocaleString(locale())) + 'km';
 function renderChips() {
   $('#chips').innerHTML = ['', ...CATEGORIES].map((c) =>
-    `<button class="chip ${filters.category === c ? 'on' : ''}" data-cat="${c}">${c ? ICON[c] + ' ' + t('cat.' + c) : '✦ ' + t('cat.all')}</button>`).join('');
+    `<button class="chip ${filters.category === c ? 'on' : ''}" data-cat="${c}">${c ? icon(c) + t('cat.' + c) : t('cat.all')}</button>`).join('');
   $('#chips').querySelectorAll('[data-cat]').forEach((b) => b.addEventListener('click', () => { filters.category = b.dataset.cat; renderChips(); loadPosts(); }));
 }
 async function loadPosts() {
@@ -107,13 +108,13 @@ async function loadPosts() {
   const posts = await api('/api/posts?' + p);
   markers.clearLayers(); markerById = {};
   posts.forEach((x) => {
-    markerById[x.id] = L.marker([x.lat, x.lng], { icon: L.divIcon({ className: '', html: `<div class="pin">${ICON[x.category] || '📦'}</div>`, iconSize: [38, 38], iconAnchor: [19, 19] }) })
+    markerById[x.id] = L.marker([x.lat, x.lng], { icon: inkIcon(x.category) })
       .bindTooltip(esc(x.title)).on('click', () => showPost(x.id)).addTo(markers);
   });
   const filtered = $('#q').value || filters.category;
   $('#count').innerHTML = t('list.count', { n: posts.length });
   $('#list').innerHTML = posts.length ? posts.map(cardHtml).join('')
-    : `<li class="empty"><div class="empty-icon">🔭</div><p>${t(filtered ? 'list.noResult' : 'list.empty')}</p>${filtered ? `<button id="resetBtn">${t('btn.reset')}</button>` : ''}</li>`;
+    : `<li class="empty"><div class="empty-icon">${icon('search')}</div><p>${t(filtered ? 'list.noResult' : 'list.empty')}</p>${filtered ? `<button id="resetBtn">${t('btn.reset')}</button>` : ''}</li>`;
   $('#resetBtn')?.addEventListener('click', () => { $('#q').value = ''; filters.category = ''; renderChips(); loadPosts(); });
   $('#list').querySelectorAll('[data-id]').forEach((el) => {
     const m = markerById[el.dataset.id];
@@ -123,13 +124,16 @@ async function loadPosts() {
   });
 }
 function cardHtml(x) {
-  const img = x.photos?.[0] ? `<img src="${esc(x.photos[0])}" alt="">` : `<div class="thumb">${ICON[x.category] || '📦'}</div>`;
-  return `<li class="card" data-id="${x.id}">${img}<div class="card-body">
-    <div class="card-top"><span class="cat">${catName(x.category)}</span><span class="ago">${ago(x.createdAt)}</span></div>
-    <h4>${esc(x.title)}</h4>
-    <p class="place">📍 ${esc(x.placeName || t('card.located'))}${x.country ? ' · ' + esc(x.country) : ''}${x.distanceKm != null ? ` · <b>${fmtKm(x.distanceKm)}</b>` : ''}</p>
-    <p>${x.reward ? `<span class="badge reward">${t('card.reward', { amount: money(x.reward, x.currency) })}</span> ` : ''}${x.status !== 'open' ? `<span class="badge ${x.status === 'found' ? 'found' : ''}">${t('status.' + x.status)}</span>` : ''}
-    ${x.lostDate ? `<span class="muted small">${t('post.lostOn', { date: fmtDate(x.lostDate) })}</span>` : ''}</p></div></li>`;
+  const stub = x.photos?.[0] ? `<img src="${esc(x.photos[0])}" alt="">` : icon(x.category);
+  const stamp = x.reward ? `<div class="stamp"><span>${t('deal.reward')}</span><b>${money(x.reward, x.currency)}</b></div>` : '';
+  return `<li class="card" data-id="${x.id}">
+    <div class="stub ${x.photos?.[0] ? 'has-photo' : ''}"><i class="hole"></i>${stub}</div>
+    <div class="card-body">
+      <div class="card-top"><span class="cat">${catName(x.category)}</span><span class="ago">${ago(x.createdAt)}</span></div>
+      <h4>${esc(x.title)}</h4>
+      <p class="place">${icon('pin')}<span>${esc(x.placeName || t('card.located'))}${x.country ? ', ' + esc(x.country) : ''}</span></p>
+      <p class="meta">${x.distanceKm != null ? `<span>${fmtKm(x.distanceKm)}</span>` : ''}${x.lostDate ? `<span>${t('post.lostOn', { date: fmtDate(x.lostDate) })}</span>` : ''}${x.status !== 'open' ? `<span class="badge ${x.status === 'found' ? 'found' : ''}">${t('status.' + x.status)}</span>` : ''}</p>
+    </div>${stamp}</li>`;
 }
 function findNearMe() {
   if (!navigator.geolocation) return toast(t('toast.noGeo'));
@@ -145,11 +149,12 @@ async function showPost(postId) {
   const foreign = x.lang && x.lang !== lang; // 작성 언어가 내 언어와 다르면 번역 버튼 강조
   const allText = [x.title, x.description, x.story].filter(Boolean).join('\n\n');
   openModal(`
-    <h3>${ICON[x.category] || ''} ${esc(x.title)} <span class="badge">${t('status.' + x.status)}</span></h3>
-    <p class="muted">📍 ${esc(x.placeName)} ${x.country ? '· ' + esc(x.country) : ''} · ${catName(x.category)} ${x.lostDate ? '· ' + t('post.lostOn', { date: fmtDate(x.lostDate) }) : ''} · ${t('post.by', { name: esc(x.owner?.name) })}</p>
+    <div class="eyebrow">${icon(x.category)}${catName(x.category)} · ${t('status.' + x.status)}</div>
+    <h3 class="post-title">${esc(x.title)}</h3>
+    <p class="muted post-meta">${icon('pin')}${esc(x.placeName)}${x.country ? ', ' + esc(x.country) : ''} ${x.lostDate ? '· ' + t('post.lostOn', { date: fmtDate(x.lostDate) }) : ''} · ${t('post.by', { name: esc(x.owner?.name) })}</p>
     ${foreign ? `<p>${translateLink(allText, 'strong')} <span class="muted small">(${LANGS[x.lang] || x.lang})</span></p>` : ''}
     ${x.photos.length ? `<div class="photos">${x.photos.map((p) => `<img src="${esc(p)}">`).join('')}</div>` : ''}
-    ${x.reward ? `<p><span class="badge reward">${t('card.reward', { amount: money(x.reward, x.currency) })}</span></p>` : ''}
+    ${x.reward ? `<div class="stamp big"><span>${t('deal.reward')}</span><b>${money(x.reward, x.currency)}</b></div>` : ''}
     ${x.description ? `<h4>${t('post.features')}</h4><p>${userText(x.description)}</p>` : ''}
     ${x.story ? `<h4>${t('post.story')}</h4><div class="story">${userText(x.story)}</div>` : ''}
     ${!foreign && allText ? `<p class="small">${translateLink(allText)}</p>` : ''}
@@ -158,7 +163,7 @@ async function showPost(postId) {
       ${mine ? (x.status === 'open' ? `<button id="closeBtn">${t('post.close')}</button>` : '') : x.status === 'open' ? `<button class="primary" id="helpBtn">${t('post.help')}</button>` : ''}
       <button data-close>${t('btn.close')}</button>
     </div>`);
-  const dm = makeMap($('#detailMap'), [x.lat, x.lng], 15); L.marker([x.lat, x.lng]).addTo(dm); setTimeout(() => dm.invalidateSize(), 50);
+  const dm = makeMap($('#detailMap'), [x.lat, x.lng], 15); L.marker([x.lat, x.lng], { icon: inkIcon(x.category) }).addTo(dm); setTimeout(() => dm.invalidateSize(), 50);
   $('#helpBtn')?.addEventListener('click', () => requireLogin(() => startHelp(x)));
   $('#closeBtn')?.addEventListener('click', async () => { await api('/api/posts/' + x.id, { method: 'PATCH', body: { status: 'closed' } }); modal.close(); loadPosts(); });
 }
@@ -184,9 +189,9 @@ function newPost() {
         <legend>${t('wiz.s1')}</legend>
         <label>${t('form.itemName')} <input name="title" maxlength="80" placeholder="${t('form.whatPh')}" autofocus /></label>
         <div class="field-label">${t('form.category')}</div>
-        <div class="cat-grid">${CATEGORIES.map((c, i) => `<label class="cat-opt"><input type="radio" name="category" value="${c}" ${i === CATEGORIES.length - 1 ? 'checked' : ''}><span>${ICON[c]}<small>${t('cat.' + c)}</small></span></label>`).join('')}</div>
+        <div class="cat-grid">${CATEGORIES.map((c, i) => `<label class="cat-opt"><input type="radio" name="category" value="${c}" ${i === CATEGORIES.length - 1 ? 'checked' : ''}><span>${icon(c)}<small>${t('cat.' + c)}</small></span></label>`).join('')}</div>
         <label>${t('form.features')} <textarea name="description" rows="2" placeholder="${t('form.featuresPh')}"></textarea></label>
-        <details class="tip"><summary>💡 ${t('wiz.tipTitle')}</summary><p>${t('wiz.tip')}</p></details>
+        <details class="tip"><summary>${icon('bulb')}${t('wiz.tipTitle')}</summary><p>${t('wiz.tip')}</p></details>
       </fieldset>
       <fieldset class="step" data-step="2" hidden>
         <legend>${t('wiz.s2')}</legend>
@@ -209,7 +214,7 @@ function newPost() {
           <label>${t('form.reward')} <input type="number" name="reward" min="0" step="1" value="0" inputmode="numeric" /></label>
           <label>${t('form.currency')} <select name="currency">${['KRW', 'USD', 'EUR', 'JPY', 'CNY', 'GBP'].map((c) => `<option ${c === curDefault ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
         </div>
-        <p class="note">🔒 ${t('form.feeNote', { fee: Math.round(feeRate * 100) })}</p>
+        <p class="note">${icon('lock')}<span>${t('form.feeNote', { fee: Math.round(feeRate * 100) })}</span></p>
       </fieldset>
       <input type="hidden" name="lat" /><input type="hidden" name="lng" /><input type="hidden" name="lang" value="${lang}" />
       <div class="wiz-nav"><button type="button" id="wizPrev">${t('btn.prev')}</button><button class="primary" id="wizNext">${t('btn.next')}</button></div>
@@ -222,7 +227,7 @@ function newPost() {
     $('#wizPrev').textContent = step === 1 ? t('btn.cancel') : t('btn.prev');
     $('#wizNext').textContent = step === 3 ? t('form.submit') : t('btn.next');
     if (step === 2) {
-      if (!picker) picker = pinPicker($('#pickMap'), (lat, lng) => { f.lat.value = lat; f.lng.value = lng; $('#pickInfo').textContent = '✅ ' + t('form.picked', { lat: lat.toFixed(4), lng: lng.toFixed(4) }); });
+      if (!picker) picker = pinPicker($('#pickMap'), (lat, lng) => { f.lat.value = lat; f.lng.value = lng; $('#pickInfo').classList.add('ok'); $('#pickInfo').textContent = t('form.picked', { lat: lat.toFixed(4), lng: lng.toFixed(4) }); });
       setTimeout(() => picker.map.invalidateSize(), 30);
     }
     $('#modalBody').scrollTop = 0;
@@ -266,7 +271,7 @@ async function loadTrips() {
   setTimeout(() => tripPicker.map.invalidateSize(), 50);
   const trips = await api('/api/trips');
   $('#tripList').innerHTML = trips.map((tr) => `
-    <div class="panel"><h3>✈️ ${esc(tr.placeName)} <span class="muted small">${fmtDate(tr.startDate)} ~ ${fmtDate(tr.endDate)} · ${t('trips.radiusShort', { km: tr.radiusKm })}</span>
+    <div class="panel"><h3>${icon('plane')}${esc(tr.placeName)} <span class="muted small">${fmtDate(tr.startDate)} ~ ${fmtDate(tr.endDate)} · ${t('trips.radiusShort', { km: tr.radiusKm })}</span>
       <button class="link" data-del="${tr.id}">${t('trips.delete')}</button></h3>
       ${tr.matches.length ? `<p>${t('trips.matches', { n: tr.matches.length })}</p><ul class="cards">${tr.matches.map(cardHtml).join('')}</ul>` : `<p class="muted">${t('trips.none')}</p>`}
     </div>`).join('');
@@ -350,6 +355,8 @@ async function route() {
 }
 
 (async function init() {
+  document.querySelectorAll('[data-icon]').forEach((el) => el.insertAdjacentHTML('afterbegin', icon(el.dataset.icon)));
+  $('.logo').insertAdjacentHTML('afterbegin', STAR_SVG);
   map = makeMap('map'); markers = L.layerGroup().addTo(map);
   let timer; $('#q').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(loadPosts, 300); });
   $('#sort').addEventListener('change', (e) => { filters.sort = e.target.value; if (filters.sort === 'near' && !filters.near) return findNearMe(); loadPosts(); });

@@ -18,7 +18,7 @@ function toast(msg) {
   const el = document.createElement('div'); el.className = 'toast'; el.textContent = msg;
   document.body.append(el); setTimeout(() => el.remove(), 2600);
 }
-const money = (n, cur = 'KRW') => new Intl.NumberFormat(locale(), { style: 'currency', currency: cur, maximumFractionDigits: 0 }).format(n || 0);
+const money = (n, cur = 'KRW') => new Intl.NumberFormat(locale(), { style: 'currency', currency: cur, currencyDisplay: 'narrowSymbol', maximumFractionDigits: 0 }).format(n || 0);
 const fmtDate = (d) => (d ? new Date(d + 'T00:00:00').toLocaleDateString(locale()) : '');
 const fmtTime = (d) => new Date(d).toLocaleString(locale());
 // 사용자 글: HTML 이스케이프 후 서버가 가린 연락처 표시를 현재 언어로 바꿈
@@ -70,7 +70,9 @@ const requireLogin = (fn) => (me ? fn() : showLogin(fn));
 // ---------- 지도 ----------
 function makeMap(el, center = [30, 10], zoom = 2) {
   const m = L.map(el, { worldCopyJump: true }).setView(center, zoom);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 19, subdomains: 'abcd', attribution: '&copy; OpenStreetMap &copy; CARTO' }).addTo(m);
+  // 체험판처럼 외부 지도 이미지를 못 쓰는 곳에서는 window.BYUL_BASEMAP으로 바탕 지도를 바꿀 수 있음
+  if (window.BYUL_BASEMAP) window.BYUL_BASEMAP(m);
+  else L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 19, subdomains: 'abcd', attribution: '&copy; OpenStreetMap &copy; CARTO' }).addTo(m);
   return m;
 }
 async function geocode(q) { // OpenStreetMap Nominatim 장소 검색 (결과 이름은 현재 언어로)
@@ -174,7 +176,7 @@ function startHelp(x) {
     <div class="row" style="margin-top:8px"><button class="primary">${t('btn.send')}</button><button type="button" data-close>${t('btn.cancel')}</button></div></form>`);
   $('#helpForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    try { const th = await api(`/api/posts/${x.id}/threads`, { method: 'POST', body: { text: e.target.text.value } }); modal.close(); location.hash = '#inbox/' + th.id; }
+    try { const th = await api(`/api/posts/${x.id}/threads`, { method: 'POST', body: { text: e.target.text.value } }); modal.close(); location.hash = '#inbox-' + th.id; }
     catch (err) { toast(err.message); }
   });
 }
@@ -286,7 +288,7 @@ async function loadInbox(threadId) {
     <li data-t="${th.id}" class="${th.id === threadId ? 'active' : ''}">
       <b>${esc(th.post?.title)}</b><br><span class="small muted">${th.role === 'owner' ? t('inbox.helper') : t('inbox.owner')}: ${esc(th.other?.name)}</span><br>
       <span class="small preview">${userText(th.lastMessage?.text || '')}</span></li>`).join('') : `<li class="muted">${t('inbox.empty')}</li>`;
-  $('#threadList').querySelectorAll('[data-t]').forEach((el) => el.addEventListener('click', () => (location.hash = '#inbox/' + el.dataset.t)));
+  $('#threadList').querySelectorAll('[data-t]').forEach((el) => el.addEventListener('click', () => (location.hash = '#inbox-' + el.dataset.t)));
   if (threadId) openThread(threadId);
   else $('#chat').innerHTML = `<p class="muted">${t('inbox.select')}</p>`;
 }
@@ -344,7 +346,9 @@ async function openThread(tid) {
 
 // ---------- 라우팅 ----------
 async function route() {
-  const [view, arg] = (location.hash.slice(1) || 'map').split('/');
+  // 주소 형식: #map, #trips, #inbox-<대화ID> (하이픈만 사용해 어디서든 링크가 유지되게)
+  const hm = location.hash.slice(1).match(/^([a-z]*)(?:[-/](.+))?$/) || [];
+  const view = hm[1] || 'map', arg = hm[2];
   document.querySelectorAll('.view').forEach((v) => v.classList.add('hidden'));
   if ((view === 'trips' || view === 'inbox') && !me) { $('#view-map').classList.remove('hidden'); return showLogin(route); }
   $('#view-' + view)?.classList.remove('hidden');

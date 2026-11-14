@@ -12,6 +12,11 @@ npm start        # http://localhost:3000
 npm test         # 전체 흐름 자동 테스트
 ```
 
+## 체험판 (서버 없이 열리는 한 장짜리 페이지)
+
+`npm run build:demo` → `dist/byul-demo.html`. 화면 코드는 그대로 쓰고 `/api` 요청은 `demo/mock-api.js`가 브라우저 안에서 처리합니다.
+예시 분실물·대화가 들어 있고, 상대방 답장과 발송은 자동으로 흉내 냅니다. 세계 지도는 Natural Earth 데이터를 벡터로 내장합니다.
+
 ## 링크로 공유하기 (Render 무료 배포)
 
 1. https://render.com 에 GitHub 계정으로 가입/로그인

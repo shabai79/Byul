@@ -28,15 +28,36 @@
         <h1 data-i18n="hero.title"></h1>
         <p data-i18n="hero.sub"></p>
       </div>
+      <ol class="how">
+        <li><b data-i18n="how.1t"></b><span data-i18n="how.1d"></span></li>
+        <li><b data-i18n="how.2t"></b><span data-i18n="how.2d"></span></li>
+        <li><b data-i18n="how.3t"></b><span data-i18n="how.3d"></span></li>
+      </ol>
       <div class="toolbar">
-        <input id="q" data-i18n-ph="search.ph" />
-        <select id="cat"></select>
-        <button id="newPostBtn" class="primary" data-i18n="btn.newPost"></button>
+        <input id="q" type="search" data-i18n-ph="search.ph" />
+        <button id="newPostBtn" class="primary desktop-only" data-i18n="btn.newPost"></button>
       </div>
-      <div class="split">
+      <div id="chips" class="chips"></div>
+      <div class="listbar">
+        <span id="count" class="count"></span>
+        <div class="listbar-right">
+          <button id="nearBtn" class="ghost" data-i18n="btn.nearMe"></button>
+          <select id="sort" aria-label="sort">
+            <option value="new" data-i18n="sort.new"></option>
+            <option value="reward" data-i18n="sort.reward"></option>
+            <option value="near" data-i18n="sort.near"></option>
+          </select>
+        </div>
+      </div>
+      <div class="seg mobile-only" id="viewToggle">
+        <button data-mode="list" class="on" data-i18n="view.list"></button>
+        <button data-mode="map" data-i18n="view.map"></button>
+      </div>
+      <div class="split" id="split" data-mode="list">
         <div id="map"></div>
         <ul id="list" class="cards"></ul>
       </div>
+      <button id="fab" class="fab mobile-only" data-i18n="btn.newPost"></button>
     </section>
 
     <!-- 여행 일정 -->

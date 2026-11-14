@@ -124,11 +124,18 @@ app.get('/api/posts', (req, res) => {
     const k = String(q).toLowerCase();
     list = list.filter((p) => [p.title, p.description, p.story, p.placeName, p.country].join(' ').toLowerCase().includes(k));
   }
-  if (lat && lng && radiusKm) {
-    const c = { lat: +lat, lng: +lng };
-    list = list.filter((p) => distanceKm(c, p) <= +radiusKm);
+  let out = list.map(publicPost);
+  const c = lat && lng ? { lat: +lat, lng: +lng } : null;
+  if (c && !Number.isNaN(c.lat) && !Number.isNaN(c.lng)) {
+    out.forEach((p) => (p.distanceKm = Math.round(distanceKm(c, p) * 10) / 10));
+    if (radiusKm) out = out.filter((p) => p.distanceKm <= +radiusKm);
   }
-  res.json(list.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(publicPost));
+  // 정렬: new(최신순, 기본) | reward(사례금 높은순) | near(가까운순, lat/lng 필요)
+  const { sort } = req.query;
+  if (sort === 'reward') out.sort((a, b) => b.reward - a.reward || b.createdAt.localeCompare(a.createdAt));
+  else if (sort === 'near' && out[0]?.distanceKm != null) out.sort((a, b) => a.distanceKm - b.distanceKm);
+  else out.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  res.json(out);
 });
 app.get('/api/posts/:id', (req, res) => {
   const p = db.posts.find((x) => x.id === req.params.id);

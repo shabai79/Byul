@@ -38,9 +38,7 @@ modal.addEventListener('click', (e) => { if (e.target === modal || e.target.data
 function renderLangUI() {
   applyStatic();
   $('#langSel').innerHTML = Object.entries(LANGS).map(([c, n]) => `<option value="${c}" ${c === lang ? 'selected' : ''}>🌐 ${n}</option>`).join('');
-  const cur = $('#cat').value;
-  $('#cat').innerHTML = `<option value="">${t('cat.all')}</option>` + CATEGORIES.map((c) => `<option value="${c}">${ICON[c]} ${t('cat.' + c)}</option>`).join('');
-  $('#cat').value = cur;
+  renderChips();
   renderUser();
 }
 
@@ -88,22 +86,57 @@ function pinPicker(el, onPick) {
   return { map: m, set };
 }
 
+// ---------- 목록·필터 ----------
+const filters = { category: '', sort: 'new', near: null };
+let markerById = {};
+function ago(iso) {
+  const s = (Date.now() - new Date(iso)) / 1000, rtf = new Intl.RelativeTimeFormat(locale(), { numeric: 'auto' });
+  if (s < 3600) return rtf.format(-Math.max(1, Math.round(s / 60)), 'minute');
+  if (s < 86400) return rtf.format(-Math.round(s / 3600), 'hour');
+  return rtf.format(-Math.round(s / 86400), 'day');
+}
+const fmtKm = (d) => (d < 10 ? d.toLocaleString(locale(), { maximumFractionDigits: 1 }) : Math.round(d).toLocaleString(locale())) + 'km';
+function renderChips() {
+  $('#chips').innerHTML = ['', ...CATEGORIES].map((c) =>
+    `<button class="chip ${filters.category === c ? 'on' : ''}" data-cat="${c}">${c ? ICON[c] + ' ' + t('cat.' + c) : '✦ ' + t('cat.all')}</button>`).join('');
+  $('#chips').querySelectorAll('[data-cat]').forEach((b) => b.addEventListener('click', () => { filters.category = b.dataset.cat; renderChips(); loadPosts(); }));
+}
 async function loadPosts() {
-  const p = new URLSearchParams({ q: $('#q').value, category: $('#cat').value });
+  const p = new URLSearchParams({ q: $('#q').value, category: filters.category, sort: filters.sort });
+  if (filters.near) { p.set('lat', filters.near.lat); p.set('lng', filters.near.lng); }
   const posts = await api('/api/posts?' + p);
-  markers.clearLayers();
-  posts.forEach((x) => L.marker([x.lat, x.lng], { icon: L.divIcon({ className: '', html: `<div class="pin">${ICON[x.category] || '📦'}</div>`, iconSize: [38, 38], iconAnchor: [19, 19] }) })
-    .bindTooltip(esc(x.title)).on('click', () => showPost(x.id)).addTo(markers));
-  $('#list').innerHTML = posts.length ? posts.map(cardHtml).join('') : `<p class="muted">${t('list.empty')}</p>`;
-  $('#list').querySelectorAll('[data-id]').forEach((el) => el.addEventListener('click', () => showPost(el.dataset.id)));
+  markers.clearLayers(); markerById = {};
+  posts.forEach((x) => {
+    markerById[x.id] = L.marker([x.lat, x.lng], { icon: L.divIcon({ className: '', html: `<div class="pin">${ICON[x.category] || '📦'}</div>`, iconSize: [38, 38], iconAnchor: [19, 19] }) })
+      .bindTooltip(esc(x.title)).on('click', () => showPost(x.id)).addTo(markers);
+  });
+  const filtered = $('#q').value || filters.category;
+  $('#count').innerHTML = t('list.count', { n: posts.length });
+  $('#list').innerHTML = posts.length ? posts.map(cardHtml).join('')
+    : `<li class="empty"><div class="empty-icon">🔭</div><p>${t(filtered ? 'list.noResult' : 'list.empty')}</p>${filtered ? `<button id="resetBtn">${t('btn.reset')}</button>` : ''}</li>`;
+  $('#resetBtn')?.addEventListener('click', () => { $('#q').value = ''; filters.category = ''; renderChips(); loadPosts(); });
+  $('#list').querySelectorAll('[data-id]').forEach((el) => {
+    const m = markerById[el.dataset.id];
+    el.addEventListener('mouseenter', () => m?.openTooltip());
+    el.addEventListener('mouseleave', () => m?.closeTooltip());
+    el.addEventListener('click', () => { if (m && window.innerWidth > 820) map.flyTo(m.getLatLng(), Math.max(map.getZoom(), 12), { duration: 0.6 }); showPost(el.dataset.id); });
+  });
 }
 function cardHtml(x) {
   const img = x.photos?.[0] ? `<img src="${esc(x.photos[0])}" alt="">` : `<div class="thumb">${ICON[x.category] || '📦'}</div>`;
-  return `<li class="card" data-id="${x.id}">${img}<div>
+  return `<li class="card" data-id="${x.id}">${img}<div class="card-body">
+    <div class="card-top"><span class="cat">${catName(x.category)}</span><span class="ago">${ago(x.createdAt)}</span></div>
     <h4>${esc(x.title)}</h4>
-    <p class="muted">📍 ${esc(x.placeName || t('card.located'))} ${x.country ? '· ' + esc(x.country) : ''}</p>
-    <p>${x.reward ? `<span class="badge reward">${t('card.reward', { amount: money(x.reward, x.currency) })}</span> ` : ''}<span class="badge ${x.status === 'found' ? 'found' : ''}">${t('status.' + x.status)}</span>
-    ${x.distanceKm != null ? `<span class="muted"> · ${x.distanceKm}km</span>` : ''}</p></div></li>`;
+    <p class="place">📍 ${esc(x.placeName || t('card.located'))}${x.country ? ' · ' + esc(x.country) : ''}${x.distanceKm != null ? ` · <b>${fmtKm(x.distanceKm)}</b>` : ''}</p>
+    <p>${x.reward ? `<span class="badge reward">${t('card.reward', { amount: money(x.reward, x.currency) })}</span> ` : ''}${x.status !== 'open' ? `<span class="badge ${x.status === 'found' ? 'found' : ''}">${t('status.' + x.status)}</span>` : ''}
+    ${x.lostDate ? `<span class="muted small">${t('post.lostOn', { date: fmtDate(x.lostDate) })}</span>` : ''}</p></div></li>`;
+}
+function findNearMe() {
+  if (!navigator.geolocation) return toast(t('toast.noGeo'));
+  navigator.geolocation.getCurrentPosition((pos) => {
+    filters.near = { lat: pos.coords.latitude, lng: pos.coords.longitude }; filters.sort = 'near'; $('#sort').value = 'near';
+    map.setView([filters.near.lat, filters.near.lng], 10); loadPosts();
+  }, () => toast(t('toast.noGeo')), { timeout: 8000 });
 }
 
 async function showPost(postId) {
@@ -142,34 +175,60 @@ function startHelp(x) {
 }
 
 function newPost() {
+  const curDefault = { ko: 'KRW', en: 'USD', ja: 'JPY', zh: 'CNY' }[lang];
   openModal(`
-    <h3>${t('form.title')}</h3>
+    <div class="wiz-head"><h3>${t('form.title')}</h3><span class="muted small" id="wizStep"></span></div>
+    <div class="progress"><span id="wizBar"></span></div>
     <form id="postForm">
-      <label>${t('form.what')} <input name="title" required maxlength="80" placeholder="${t('form.whatPh')}" /></label>
-      <div class="row">
-        <label>${t('form.category')} <select name="category">${CATEGORIES.map((c) => `<option value="${c}">${ICON[c]} ${t('cat.' + c)}</option>`).join('')}</select></label>
-        <label>${t('form.lostDate')} <input type="date" name="lostDate" /></label>
-      </div>
-      <label>${t('form.placeSearch')} <div class="row"><input id="placeQ" placeholder="${t('form.placeSearchPh')}" /><button type="button" id="placeBtn" style="flex:0">${t('form.find')}</button></div></label>
-      <div id="pickMap" class="minimap"></div>
-      <p class="muted small" id="pickInfo">${t('form.pickHint')}</p>
-      <div class="row">
-        <label>${t('form.placeName')} <input name="placeName" placeholder="${t('form.placeNamePh')}" /></label>
-        <label>${t('form.country')} <input name="country" placeholder="${t('form.countryPh')}" /></label>
-      </div>
-      <label>${t('form.features')} <textarea name="description" rows="2" placeholder="${t('form.featuresPh')}"></textarea></label>
-      <label>${t('form.story')} <textarea name="story" rows="4" placeholder="${t('form.storyPh')}"></textarea></label>
-      <div class="row">
-        <label>${t('form.reward')} <input type="number" name="reward" min="0" step="1" value="0" /></label>
-        <label>${t('form.currency')} <select name="currency">${['KRW', 'USD', 'EUR', 'JPY', 'CNY', 'GBP'].map((c) => `<option ${c === { ko: 'KRW', en: 'USD', ja: 'JPY', zh: 'CNY' }[lang] ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
-      </div>
-      <p class="muted small">${t('form.feeNote', { fee: Math.round(feeRate * 100) })}</p>
-      <label>${t('form.photos')} <input type="file" name="photos" accept="image/*" multiple /></label>
+      <fieldset class="step" data-step="1">
+        <legend>${t('wiz.s1')}</legend>
+        <label>${t('form.itemName')} <input name="title" maxlength="80" placeholder="${t('form.whatPh')}" autofocus /></label>
+        <div class="field-label">${t('form.category')}</div>
+        <div class="cat-grid">${CATEGORIES.map((c, i) => `<label class="cat-opt"><input type="radio" name="category" value="${c}" ${i === CATEGORIES.length - 1 ? 'checked' : ''}><span>${ICON[c]}<small>${t('cat.' + c)}</small></span></label>`).join('')}</div>
+        <label>${t('form.features')} <textarea name="description" rows="2" placeholder="${t('form.featuresPh')}"></textarea></label>
+        <details class="tip"><summary>💡 ${t('wiz.tipTitle')}</summary><p>${t('wiz.tip')}</p></details>
+      </fieldset>
+      <fieldset class="step" data-step="2" hidden>
+        <legend>${t('wiz.s2')}</legend>
+        <label>${t('form.placeSearch')} <div class="row nowrap"><input id="placeQ" placeholder="${t('form.placeSearchPh')}" /><button type="button" id="placeBtn" class="fit">${t('form.find')}</button></div></label>
+        <div id="pickMap" class="minimap"></div>
+        <p class="muted small" id="pickInfo">${t('form.pickHint')}</p>
+        <div class="row">
+          <label>${t('form.placeName')} <input name="placeName" placeholder="${t('form.placeNamePh')}" /></label>
+          <label>${t('form.country')} <input name="country" placeholder="${t('form.countryPh')}" /></label>
+        </div>
+        <label>${t('form.lostDate')} <input type="date" name="lostDate" max="${new Date().toISOString().slice(0, 10)}" /></label>
+      </fieldset>
+      <fieldset class="step" data-step="3" hidden>
+        <legend>${t('wiz.s3')}</legend>
+        <label>${t('form.photos')} <input type="file" name="photos" accept="image/*" multiple id="photoIn" /></label>
+        <p class="muted small">${t('form.photosHint')}</p>
+        <div id="photoPrev" class="photo-prev"></div>
+        <label>${t('form.story')} <textarea name="story" rows="4" placeholder="${t('form.storyPh')}"></textarea></label>
+        <div class="row">
+          <label>${t('form.reward')} <input type="number" name="reward" min="0" step="1" value="0" inputmode="numeric" /></label>
+          <label>${t('form.currency')} <select name="currency">${['KRW', 'USD', 'EUR', 'JPY', 'CNY', 'GBP'].map((c) => `<option ${c === curDefault ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
+        </div>
+        <p class="note">🔒 ${t('form.feeNote', { fee: Math.round(feeRate * 100) })}</p>
+      </fieldset>
       <input type="hidden" name="lat" /><input type="hidden" name="lng" /><input type="hidden" name="lang" value="${lang}" />
-      <div class="row"><button class="primary">${t('form.submit')}</button><button type="button" data-close>${t('btn.cancel')}</button></div>
+      <div class="wiz-nav"><button type="button" id="wizPrev">${t('btn.prev')}</button><button class="primary" id="wizNext">${t('btn.next')}</button></div>
     </form>`);
-  const f = $('#postForm');
-  const picker = pinPicker($('#pickMap'), (lat, lng) => { f.lat.value = lat; f.lng.value = lng; $('#pickInfo').textContent = t('form.picked', { lat: lat.toFixed(5), lng: lng.toFixed(5) }); });
+  const f = $('#postForm'); let step = 1, picker;
+  const show = () => {
+    f.querySelectorAll('.step').forEach((s) => (s.hidden = +s.dataset.step !== step));
+    $('#wizStep').textContent = t('wiz.step', { n: step });
+    $('#wizBar').style.width = (step / 3) * 100 + '%';
+    $('#wizPrev').textContent = step === 1 ? t('btn.cancel') : t('btn.prev');
+    $('#wizNext').textContent = step === 3 ? t('form.submit') : t('btn.next');
+    if (step === 2) {
+      if (!picker) picker = pinPicker($('#pickMap'), (lat, lng) => { f.lat.value = lat; f.lng.value = lng; $('#pickInfo').textContent = '✅ ' + t('form.picked', { lat: lat.toFixed(4), lng: lng.toFixed(4) }); });
+      setTimeout(() => picker.map.invalidateSize(), 30);
+    }
+    $('#modalBody').scrollTop = 0;
+  };
+  show();
+  $('#wizPrev').addEventListener('click', () => (step === 1 ? modal.close() : (step--, show())));
   $('#placeBtn').addEventListener('click', async () => {
     const hit = await geocode($('#placeQ').value).catch(() => null);
     if (!hit) return toast(t('toast.placeNotFound'));
@@ -177,9 +236,15 @@ function newPost() {
     if (!f.placeName.value) f.placeName.value = hit.name.split(',')[0];
     if (!f.country.value) f.country.value = hit.name.split(',').pop().trim();
   });
+  $('#placeQ').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('#placeBtn').click(); } });
+  $('#photoIn').addEventListener('change', (e) => {
+    $('#photoPrev').innerHTML = [...e.target.files].slice(0, 4).map((file) => `<img src="${URL.createObjectURL(file)}" alt="">`).join('');
+  });
   f.addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (!f.lat.value) return toast(t('toast.pickLocation'));
+    if (step === 1 && !f.title.value.trim()) { f.title.focus(); return toast(t('wiz.needTitle')); }
+    if (step === 2 && !f.lat.value) return toast(t('toast.pickLocation'));
+    if (step < 3) { step++; return show(); }
     try { const p = await api('/api/posts', { method: 'POST', body: new FormData(f) }); modal.close(); toast(t('toast.posted')); await loadPosts(); map.setView([p.lat, p.lng], 12); }
     catch (err) { toast(err.message); }
   });
@@ -287,8 +352,15 @@ async function route() {
 (async function init() {
   map = makeMap('map'); markers = L.layerGroup().addTo(map);
   let timer; $('#q').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(loadPosts, 300); });
-  $('#cat').addEventListener('change', loadPosts);
+  $('#sort').addEventListener('change', (e) => { filters.sort = e.target.value; if (filters.sort === 'near' && !filters.near) return findNearMe(); loadPosts(); });
+  $('#nearBtn').addEventListener('click', findNearMe);
   $('#newPostBtn').addEventListener('click', () => requireLogin(newPost));
+  $('#fab').addEventListener('click', () => requireLogin(newPost));
+  $('#viewToggle').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    $('#split').dataset.mode = b.dataset.mode;
+    $('#viewToggle').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+    if (b.dataset.mode === 'map') setTimeout(() => map.invalidateSize(), 30);
+  }));
   $('#langSel').addEventListener('change', (e) => { setLang(e.target.value); if (modal.open) modal.close(); renderLangUI(); route(); });
   me = await api('/api/me'); feeRate = (await api('/api/config')).feeRate;
   renderLangUI(); window.addEventListener('hashchange', route); route();

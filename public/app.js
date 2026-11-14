@@ -92,7 +92,7 @@ async function loadPosts() {
   const p = new URLSearchParams({ q: $('#q').value, category: $('#cat').value });
   const posts = await api('/api/posts?' + p);
   markers.clearLayers();
-  posts.forEach((x) => L.marker([x.lat, x.lng], { icon: L.divIcon({ className: '', html: `<div style="font-size:26px">${ICON[x.category] || '📦'}</div>`, iconSize: [30, 30] }) })
+  posts.forEach((x) => L.marker([x.lat, x.lng], { icon: L.divIcon({ className: '', html: `<div class="pin">${ICON[x.category] || '📦'}</div>`, iconSize: [38, 38], iconAnchor: [19, 19] }) })
     .bindTooltip(esc(x.title)).on('click', () => showPost(x.id)).addTo(markers));
   $('#list').innerHTML = posts.length ? posts.map(cardHtml).join('') : `<p class="muted">${t('list.empty')}</p>`;
   $('#list').querySelectorAll('[data-id]').forEach((el) => el.addEventListener('click', () => showPost(el.dataset.id)));
@@ -278,6 +278,7 @@ async function route() {
   document.querySelectorAll('.view').forEach((v) => v.classList.add('hidden'));
   if ((view === 'trips' || view === 'inbox') && !me) { $('#view-map').classList.remove('hidden'); return showLogin(route); }
   $('#view-' + view)?.classList.remove('hidden');
+  document.querySelectorAll('nav a').forEach((a) => a.classList.toggle('active', a.getAttribute('href') === '#' + view));
   if (view === 'map') { setTimeout(() => map.invalidateSize(), 50); loadPosts(); }
   if (view === 'trips') loadTrips();
   if (view === 'inbox') loadInbox(arg);

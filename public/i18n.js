@@ -5,6 +5,7 @@ const LOCALES = { ko: 'ko-KR', en: 'en-US', ja: 'ja-JP', zh: 'zh-CN' };
 
 const MESSAGES = {
   ko: {
+    'hero.title': '잃어버린 물건, 그곳에 가는 누군가가 찾아줄 수 있어요', 'hero.sub': '잃어버린 장소에 이야기를 남기면 그 지역 주민과 여행자가 보고 도와줍니다. 연락과 사례금은 Byul 안에서 안전하게 오갑니다.',
     'app.title': '세계 어디서든 잃어버린 물건 찾기',
     'nav.map': '지도', 'nav.trips': '내 여행', 'nav.inbox': '메시지',
     'search.ph': '물건, 장소, 나라 검색 (예: 여권, 파리, 카메라)',
@@ -52,6 +53,7 @@ const MESSAGES = {
   },
 
   en: {
+    'hero.title': 'Lost something far away? Someone headed there can find it.', 'hero.sub': 'Leave your story where you lost it. Locals and travelers nearby can help, with messages and rewards handled safely inside Byul.',
     'app.title': 'Find lost items anywhere in the world',
     'nav.map': 'Map', 'nav.trips': 'My trips', 'nav.inbox': 'Messages',
     'search.ph': 'Search item, place or country (e.g. passport, Paris, camera)',
@@ -99,6 +101,7 @@ const MESSAGES = {
   },
 
   ja: {
+    'hero.title': 'なくした物、そこへ行く誰かが見つけてくれるかもしれません', 'hero.sub': 'なくした場所にストーリーを残すと、地元の人や旅行者が見て手伝ってくれます。連絡と謝礼は Byul 内で安全にやり取りされます。',
     'app.title': '世界中どこでも落とし物を探そう',
     'nav.map': '地図', 'nav.trips': 'マイ旅行', 'nav.inbox': 'メッセージ',
     'search.ph': '物・場所・国で検索(例:パスポート、パリ、カメラ)',
@@ -146,6 +149,7 @@ const MESSAGES = {
   },
 
   zh: {
+    'hero.title': '丢失的物品,也许正要去那里的人能帮你找回', 'hero.sub': '在丢失的地点留下你的故事,当地人和旅行者都能看到并帮忙。联系与酬金都在 Byul 内安全完成。',
     'app.title': '在世界任何地方寻找失物',
     'nav.map': '地图', 'nav.trips': '我的旅行', 'nav.inbox': '消息',
     'search.ph': '搜索物品、地点或国家(如:护照、巴黎、相机)',

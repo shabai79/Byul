@@ -4,24 +4,30 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Byul</title>
+  <meta name="theme-color" content="#16213e" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
   <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
   <header>
-    <a class="logo" href="#map">✦ Byul</a>
+    <a class="logo" href="#map"><span>✦</span> Byul</a>
     <nav>
       <a href="#map" data-i18n="nav.map"></a>
       <a href="#trips" data-i18n="nav.trips"></a>
       <a href="#inbox" data-i18n="nav.inbox"></a>
       <select id="langSel" aria-label="Language"></select>
-      <span id="userBox"></span>
     </nav>
+    <span id="userBox"></span>
   </header>
 
   <main>
     <!-- 지도 + 목록 -->
     <section id="view-map" class="view">
+      <div class="hero">
+        <h1 data-i18n="hero.title"></h1>
+        <p data-i18n="hero.sub"></p>
+      </div>
       <div class="toolbar">
         <input id="q" data-i18n-ph="search.ph" />
         <select id="cat"></select>

@@ -1,0 +1,27 @@
+{
+  "name": "byul",
+  "version": "1.0.0",
+  "description": "전 세계 분실물 찾기 중개 서비스",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shabai79/Byul.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/shabai79/Byul/issues"
+  },
+  "homepage": "https://github.com/shabai79/Byul#readme",
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "express": "^4.22.3",
+    "leaflet": "^1.9.4",
+    "multer": "^1.4.5-lts.1"
+  }
+}

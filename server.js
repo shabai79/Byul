@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { msg, SUPPORTED } = require('./lib/messages');
+const mission = require('./lib/mission');
 
 const PORT = process.env.PORT || 3000;
 const FEE_RATE = Number(process.env.FEE_RATE || 0.1); // 플랫폼 수수료 10%
@@ -53,8 +54,10 @@ function maskContacts(text) {
 }
 const publicUser = (u) => u && { id: u.id, name: u.name };
 const userById = (uid) => db.users.find((u) => u.id === uid);
+// proof(확인 정보: 일련번호·숨은 특징 등)는 공개하지 않음 — 분실자와, 결제가 끝난 도우미에게만 대화방에서 보여줌
 function publicPost(p) {
-  return { ...p, owner: publicUser(userById(p.ownerId)) };
+  const { proof, ...rest } = p;
+  return { ...rest, hasProof: !!proof, owner: publicUser(userById(p.ownerId)) };
 }
 
 // ---------- 앱 ----------
@@ -149,6 +152,7 @@ app.post('/api/posts', auth, upload.array('photos', 4), (req, res) => {
     lang: SUPPORTED.includes(b.lang) ? b.lang : 'en', // 작성 언어 (번역 버튼 표시용)
     description: maskContacts(b.description || '').slice(0, 2000),
     story: maskContacts(b.story || '').slice(0, 4000),
+    proof: String(b.proof || '').trim().slice(0, 500),
     lat, lng,
     placeName: String(b.placeName || '').slice(0, 120),
     country: String(b.country || '').slice(0, 60),
@@ -213,11 +217,14 @@ app.post('/api/posts/:id/threads', auth, (req, res) => {
   const post = db.posts.find((p) => p.id === req.params.id);
   if (!post) return bad(req, res, 'postNotFound', 404);
   if (post.ownerId === req.user.id) return bad(req, res, 'ownPost');
+  const kind = req.body?.kind === 'finder' ? 'finder' : 'offer';
   let t = db.threads.find((x) => x.postId === post.id && x.helperId === req.user.id);
   if (!t) {
-    t = { id: id(), postId: post.id, ownerId: post.ownerId, helperId: req.user.id, createdAt: now() };
+    t = { id: id(), postId: post.id, ownerId: post.ownerId, helperId: req.user.id, kind, createdAt: now() };
     db.threads.push(t);
   }
+  // 거래가 시작되기 전에는 제안 내용을 새로 보낼 수 있음
+  if (kind === 'offer' && !db.deals.some((d) => d.threadId === t.id)) { t.kind = 'offer'; t.offer = mission.makeOffer(req.body); }
   if (req.body?.text) db.messages.push({ id: id(), threadId: t.id, senderId: req.user.id, text: maskContacts(req.body.text).slice(0, 2000), createdAt: now() });
   save();
   res.json(threadView(t, req.user.id));
@@ -233,7 +240,10 @@ function myThread(req, res) {
 }
 app.get('/api/threads/:id/messages', auth, (req, res) => {
   const t = myThread(req, res); if (!t) return;
-  res.json({ thread: threadView(t, req.user.id), messages: db.messages.filter((m) => m.threadId === t.id) });
+  const view = threadView(t, req.user.id);
+  const post = db.posts.find((p) => p.id === t.postId);
+  const proof = post?.proof && mission.canSeeProof(view.role, view.deal) ? post.proof : null;
+  res.json({ thread: view, proof, messages: db.messages.filter((m) => m.threadId === t.id) });
 });
 app.post('/api/threads/:id/messages', auth, (req, res) => {
   const t = myThread(req, res); if (!t) return;
@@ -246,47 +256,32 @@ app.post('/api/threads/:id/messages', auth, (req, res) => {
   res.json({ ...m, masked: masked !== text });
 });
 
-// ----- 거래 (에스크로: 사례금+수수료를 맡겨두고, 물건 수령 확인 후 지급) -----
-// 흐름: proposed(분실자가 도움 수락) → paid(분실자 결제·예치) → shipped(찾은 사람이 발송/전달) → completed(분실자 수령 확인, 정산)
+// ----- 찾기 의뢰 거래 (규칙은 lib/mission.js) -----
 function deal(req, res) {
   const t = myThread(req, res); if (!t) return {};
   return { t, d: db.deals.find((x) => x.threadId === t.id), post: db.posts.find((p) => p.id === t.postId) };
 }
+// 분실자가 제안을 수락 → 금액 확정(아직 결제 전)
 app.post('/api/threads/:id/deal', auth, (req, res) => {
   const { t, d, post } = deal(req, res); if (!t) return;
   if (t.ownerId !== req.user.id) return bad(req, res, 'ownerOnly', 403);
   if (d) return bad(req, res, 'dealExists');
   if (post.status !== 'open') return bad(req, res, 'postTaken');
-  const reward = Math.max(0, Math.round(Number(req.body?.reward ?? post.reward)));
-  const shippingCost = Math.max(0, Math.round(Number(req.body?.shippingCost) || 0));
-  const fee = Math.round(reward * FEE_RATE);
-  const nd = { id: id(), threadId: t.id, postId: post.id, ownerId: t.ownerId, helperId: t.helperId, reward, shippingCost, fee, feeRate: FEE_RATE, currency: post.currency, total: reward + shippingCost + fee, status: 'proposed', history: [{ status: 'proposed', at: now() }] };
-  db.deals.push(nd);
-  post.status = 'matched';
+  const r = mission.createDeal({ post, thread: t, body: req.body, feeRate: FEE_RATE, id, now });
+  if (r.error) return bad(req, res, r.error);
+  db.deals.push(r.deal);
   save();
-  res.json(nd);
+  res.json(r.deal);
 });
-const transitions = {
-  pay: { from: 'proposed', to: 'paid', who: 'owner' },
-  ship: { from: 'paid', to: 'shipped', who: 'helper' },
-  confirm: { from: 'shipped', to: 'completed', who: 'owner' },
-  cancel: { from: 'proposed', to: 'cancelled', who: 'any' },
-};
 app.post('/api/threads/:id/deal/:action', auth, (req, res) => {
   const { t, d, post } = deal(req, res); if (!t) return;
-  const tr = transitions[req.params.action];
-  if (!d || !tr) return bad(req, res, 'badRequest');
   const role = t.ownerId === req.user.id ? 'owner' : 'helper';
-  if (tr.who !== 'any' && tr.who !== role) return bad(req, res, 'otherParty', 403);
-  if (d.status !== tr.from) return bad(req, res, 'wrongState');
-  // TODO: 실서비스에서는 여기서 PG(토스페이먼츠·Stripe Connect 등) 결제/정산 API를 호출
-  d.status = tr.to;
-  if (req.body?.trackingNo) d.trackingNo = String(req.body.trackingNo).slice(0, 60);
-  d.history.push({ status: tr.to, at: now() });
-  if (tr.to === 'completed') post.status = 'found';
-  if (tr.to === 'cancelled') { post.status = 'open'; db.deals = db.deals.filter((x) => x !== d); }
+  const r = mission.transition(d, req.params.action, role, req.body, now);
+  if (r.error) return bad(req, res, r.error, r.status || 400);
+  if (r.postStatus) post.status = r.postStatus;
+  if (r.remove) db.deals = db.deals.filter((x) => x !== d);
   save();
-  res.json(d);
+  res.json(r.deal);
 });
 
 app.get('/healthz', (_req, res) => res.send('ok'));

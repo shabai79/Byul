@@ -57,6 +57,7 @@ window.BYUL_BASEMAP = function (m) {
   m.attributionControl.addAttribution('Natural Earth');
 };
 </script>
+<script>${safe(read('lib/mission.js'))}</script>
 <script>${safe(read('public/icons.js'))}</script>
 <script>${safe(read('public/i18n.js'))}</script>
 <script>${safe(mock)}</script>

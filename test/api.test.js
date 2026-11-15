@@ -14,7 +14,7 @@ test('연락처 마스킹', () => {
   assert.equal(maskContacts('다음주 3일에 갑니다'), '다음주 3일에 갑니다');
 });
 
-test('분실 → 여행 매칭 → 대화 → 에스크로 거래 전체 흐름', async () => {
+test('분실 → 여행 매칭 → 제안 → 에스크로 → 찾음·발송·수령 / 못 찾음 / 습득 알림', async () => {
   const server = app.listen(0);
   const base = `http://localhost:${server.address().port}`;
   const client = () => {
@@ -30,7 +30,7 @@ test('분실 → 여행 매칭 → 대화 → 에스크로 거래 전체 흐름'
   await helper('/api/signup', 'POST', { name: '여행자', email: 'h@x.com', password: 'secret1' });
 
   const fd = new FormData();
-  Object.entries({ title: '할머니 반지', category: 'jewelry', lang: 'ko', lat: 48.8584, lng: 2.2945, placeName: '에펠탑', country: '프랑스', reward: 100000, story: '연락은 010-9999-8888' }).forEach(([k, v]) => fd.append(k, v));
+  Object.entries({ title: '할머니 반지', category: 'jewelry', lang: 'ko', proof: '안쪽에 1962 각인', lat: 48.8584, lng: 2.2945, placeName: '에펠탑', country: '프랑스', reward: 100000, story: '연락은 010-9999-8888' }).forEach(([k, v]) => fd.append(k, v));
   const login = await fetch(base + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'o@x.com', password: 'secret1' }) });
   const cookie = login.headers.get('set-cookie').split(';')[0];
   const post = await (await fetch(base + '/api/posts', { method: 'POST', body: fd, headers: { cookie } })).json();
@@ -43,18 +43,46 @@ test('분실 → 여행 매칭 → 대화 → 에스크로 거래 전체 흐름'
   const trips = (await helper('/api/trips')).data;
   assert.equal(trips[0].matches.length, 1);
 
-  const t = (await helper(`/api/posts/${post.id}/threads`, 'POST', { text: '다음 주에 갑니다. 내 이메일 me@test.com' })).data;
+  const t = (await helper(`/api/posts/${post.id}/threads`, 'POST', { text: '다음 주에 갑니다. 내 이메일 me@test.com', scope: 'collect', baseFee: 20000, visitDate: '2026-12-01' })).data;
+  assert.deepEqual(t.offer, { scope: 'collect', baseFee: 20000, visitDate: '2026-12-01' });
   const msgs = (await owner(`/api/threads/${t.id}/messages`)).data.messages;
   assert.match(msgs[0].text, /\[\[contact\]\]/);
+  // 확인 정보는 공개 목록·결제 전 도우미에게 보이지 않음
+  assert.equal((await helper(`/api/posts/${post.id}`)).data.proof, undefined);
+  assert.equal((await helper(`/api/threads/${t.id}/messages`)).data.proof, null);
 
   const d = (await owner(`/api/threads/${t.id}/deal`, 'POST', { reward: 100000, shippingCost: 30000 })).data;
-  assert.equal(d.fee, 10000); assert.equal(d.total, 140000);
+  assert.equal(d.feeBase, 2000); assert.equal(d.feeReward, 10000); assert.equal(d.total, 162000);
   assert.equal((await helper(`/api/threads/${t.id}/deal/pay`, 'POST')).status, 403);
   await owner(`/api/threads/${t.id}/deal/pay`, 'POST');
+  assert.equal((await helper(`/api/threads/${t.id}/messages`)).data.proof, '안쪽에 1962 각인');
+  assert.equal((await helper(`/api/threads/${t.id}/deal/found`, 'POST', {})).status, 400);
+  await helper(`/api/threads/${t.id}/deal/found`, 'POST', { foundPlace: '에펠탑 분실물센터' });
   await helper(`/api/threads/${t.id}/deal/ship`, 'POST', { trackingNo: 'EMS123' });
   const done = (await owner(`/api/threads/${t.id}/deal/confirm`, 'POST')).data;
-  assert.equal(done.status, 'completed');
+  assert.equal(done.status, 'completed'); assert.equal(done.payout, 150000);
   assert.equal((await owner(`/api/posts/${post.id}`)).data.status, 'found');
+
+  // 못 찾은 경우: 기본 수고비만 지급, 나머지 환불
+  const fd2 = new FormData();
+  Object.entries({ title: '우산', lat: 1, lng: 1, reward: 50000 }).forEach(([k, v]) => fd2.append(k, v));
+  const post2 = await (await fetch(base + '/api/posts', { method: 'POST', body: fd2, headers: { cookie } })).json();
+  const t2 = (await helper(`/api/posts/${post2.id}/threads`, 'POST', { scope: 'inquire', baseFee: 10000 })).data;
+  const d2 = (await owner(`/api/threads/${t2.id}/deal`, 'POST', { shippingCost: 99999 })).data;
+  assert.equal(d2.shippingCost, 0); assert.equal(d2.total, 66000);
+  await owner(`/api/threads/${t2.id}/deal/pay`, 'POST');
+  assert.equal((await helper(`/api/threads/${t2.id}/deal/ship`, 'POST')).status, 400);
+  await helper(`/api/threads/${t2.id}/deal/notfound`, 'POST', { note: '센터에 없음' });
+  const closed = (await owner(`/api/threads/${t2.id}/deal/closeNotFound`, 'POST')).data;
+  assert.equal(closed.payout, 10000); assert.equal(closed.refund, 55000);
+  assert.equal((await owner(`/api/posts/${post2.id}`)).data.status, 'open');
+
+  // 습득 알림 대화에서는 거래 불가
+  const third = client();
+  await third('/api/signup', 'POST', { name: '습득자', email: 'f@x.com', password: 'secret1' });
+  const tf = (await third(`/api/posts/${post2.id}/threads`, 'POST', { kind: 'finder', text: '경찰서에 맡겼어요' })).data;
+  assert.equal(tf.kind, 'finder');
+  assert.equal((await owner(`/api/threads/${tf.id}/deal`, 'POST', {})).status, 400);
   server.close();
   fs.rmSync(dbFile, { force: true });
 });

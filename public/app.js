@@ -2,7 +2,6 @@
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const CATEGORIES = ['electronics', 'id', 'wallet', 'bag', 'camera', 'jewelry', 'clothing', 'pet', 'keepsake', 'other'];
-const DEAL_STEPS = ['proposed', 'paid', 'shipped', 'completed'];
 const catName = (c) => (CATEGORIES.includes(c) ? t('cat.' + c) : c);
 let me = null, feeRate = 0.1, map, markers;
 
@@ -137,7 +136,7 @@ async function loadPosts() {
 }
 function cardHtml(x) {
   const stub = x.photos?.[0] ? `<img src="${esc(x.photos[0])}" alt="">` : icon(x.category);
-  const stamp = x.reward ? `<div class="stamp"><span>${t('deal.reward')}</span><b>${money(x.reward, x.currency)}</b></div>` : '';
+  const stamp = x.reward ? `<div class="stamp"><span>${t('stamp.label')}</span><b>${money(x.reward, x.currency)}</b></div>` : '';
   return `<li class="card" data-id="${x.id}">
     <div class="stub ${x.photos?.[0] ? 'has-photo' : ''}"><i class="hole"></i>${stub}</div>
     <div class="card-body">
@@ -167,30 +166,71 @@ async function showPost(postId) {
     ${foreign ? `<p>${translateLink(allText, 'strong')} <span class="muted small">(${LANGS[x.lang] || x.lang})</span></p>` : ''}
     ${!mine && (x.category === 'id' || x.category === 'pet') ? `<p class="notice">${icon('bulb')}<span>${t(x.category === 'id' ? 'notice.idHelper' : 'notice.petHelper')}</span></p>` : ''}
     ${x.photos.length ? `<div class="photos">${x.photos.map((p) => `<img src="${esc(p)}">`).join('')}</div>` : ''}
-    ${x.reward ? `<div class="stamp big"><span>${t('deal.reward')}</span><b>${money(x.reward, x.currency)}</b></div>` : ''}
+    ${x.reward ? `<div class="stamp big"><span>${t('stamp.label')}</span><b>${money(x.reward, x.currency)}</b></div>` : ''}
     ${x.description ? `<h4>${t('post.features')}</h4><p>${userText(x.description)}</p>` : ''}
     ${x.story ? `<h4>${t('post.story')}</h4><div class="story">${userText(x.story)}</div>` : ''}
     ${!foreign && allText ? `<p class="small">${translateLink(allText)}</p>` : ''}
+    ${mine ? '<div id="offerList" class="offer-list"></div>' : ''}
     <div id="detailMap" class="minimap" style="margin-top:12px"></div>
     <div class="row" style="margin-top:12px">
-      ${mine ? (x.status === 'open' ? `<button id="closeBtn">${t('post.close')}</button>` : '') : x.status === 'open' ? `<button class="primary" id="helpBtn">${t('post.help')}</button>` : ''}
+      ${mine ? (x.status === 'open' ? `<button id="closeBtn">${t('post.close')}</button>` : '') : x.status === 'open' ? `<button class="primary" id="helpBtn">${t('post.help')}</button><button id="finderBtn">${t('finder.btn')}</button>` : ''}
       <button data-close>${t('btn.close')}</button>
     </div>`);
   const dm = makeMap($('#detailMap'), [x.lat, x.lng], 15); L.marker([x.lat, x.lng], { icon: inkIcon(x.category) }).addTo(dm); setTimeout(() => dm.invalidateSize(), 50);
-  $('#helpBtn')?.addEventListener('click', () => requireLogin(() => startHelp(x)));
+  $('#helpBtn')?.addEventListener('click', () => requireLogin(() => startOffer(x)));
+  $('#finderBtn')?.addEventListener('click', () => requireLogin(() => startFinder(x)));
+  if (mine) renderOffers(x.id);
   $('#closeBtn')?.addEventListener('click', async () => { await api('/api/posts/' + x.id, { method: 'PATCH', body: { status: 'closed' } }); modal.close(); loadPosts(); });
 }
-function startHelp(x) {
-  openModal(`<h3>${t('help.title', { title: esc(x.title) })}</h3>
+// 도우미의 찾기 제안: 방문 예정일, 맡을 일, 기본 수고비(못 찾아도 받는 금액)
+function startOffer(x) {
+  const today = new Date().toISOString().slice(0, 10);
+  openModal(`<p class="eyebrow">${icon(x.category)}${esc(x.title)}</p>
+    <h3 class="post-title">${t('offer.formTitle')}</h3>
     <p class="muted small">${t('help.desc')}</p>
-    <p class="notice small">${icon('bulb')}<span>${t('help.legal')} <a href="#rules" data-close>${t('rules.nav')}</a></span></p>
-    <form id="helpForm"><textarea name="text" rows="5" required placeholder="${t('help.ph')}"></textarea>
-    <div class="row" style="margin-top:8px"><button class="primary">${t('btn.send')}</button><button type="button" data-close>${t('btn.cancel')}</button></div></form>`);
-  $('#helpForm').addEventListener('submit', async (e) => {
+    <form id="offerForm">
+      <div class="field-label">${t('offer.scopeLabel')}</div>
+      <div class="scope-grid">${['collect', 'inquire'].map((s, i) => `<label class="scope-opt"><input type="radio" name="scope" value="${s}" ${i ? '' : 'checked'}><span><b>${t('offer.scope.' + s)}</b><small>${t('offer.scopeDesc.' + s)}</small></span></label>`).join('')}</div>
+      <div class="row">
+        <label>${t('offer.visitDate')} <input type="date" name="visitDate" min="${today}" /></label>
+        <label>${t('offer.baseFee')} (${esc(x.currency)}) <input type="number" name="baseFee" min="0" step="1" value="0" inputmode="numeric" /></label>
+      </div>
+      <p class="muted small" style="margin-top:-8px">${t('offer.baseFeeHelp', { reward: money(x.reward, x.currency) })}</p>
+      <label>${t('offer.message')} <textarea name="text" rows="4" required placeholder="${t('help.ph')}"></textarea></label>
+      <p class="notice small">${icon('bulb')}<span>${t('help.legal')}</span></p>
+      <div class="row"><button class="primary">${t('offer.send')}</button><button type="button" data-close>${t('btn.cancel')}</button></div>
+    </form>`);
+  $('#offerForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    try { const th = await api(`/api/posts/${x.id}/threads`, { method: 'POST', body: { text: e.target.text.value } }); modal.close(); location.hash = '#inbox-' + th.id; }
+    const body = Object.fromEntries(new FormData(e.target)); body.kind = 'offer';
+    try { const th = await api(`/api/posts/${x.id}/threads`, { method: 'POST', body }); modal.close(); toast(t('offer.sent')); location.hash = '#inbox-' + th.id; }
     catch (err) { toast(err.message); }
   });
+}
+// 물건을 주운 사람: 돈이 오가지 않는 '습득 알림'. 경찰·시설 제출을 먼저 안내
+function startFinder(x) {
+  openModal(`<p class="eyebrow">${icon(x.category)}${esc(x.title)}</p>
+    <h3 class="post-title">${t('finder.title')}</h3>
+    <ul class="finder-steps">${t('finder.body').split('\n').map((li) => `<li>${li}</li>`).join('')}</ul>
+    <form id="finderForm">
+      <label>${t('finder.where')} <textarea name="text" rows="3" required placeholder="${t('finder.ph')}"></textarea></label>
+      <div class="row"><button class="primary">${t('finder.send')}</button><button type="button" data-close>${t('btn.cancel')}</button></div>
+    </form>`);
+  $('#finderForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try { const th = await api(`/api/posts/${x.id}/threads`, { method: 'POST', body: { kind: 'finder', text: e.target.text.value } }); modal.close(); location.hash = '#inbox-' + th.id; }
+    catch (err) { toast(err.message); }
+  });
+}
+// 분실자에게: 이 글에 들어온 제안 목록
+async function renderOffers(postId) {
+  const box = $('#offerList'); if (!box) return;
+  const list = (await api('/api/threads')).filter((th) => th.postId === postId && th.role === 'owner');
+  box.innerHTML = `<h4>${t('offer.received')} <span class="muted">${list.length}</span></h4>` + (list.length ? `<ul class="offers">${list.map((th) => `
+    <li><div><b>${esc(th.other?.name)}</b> ${th.kind === 'finder' ? `<span class="badge">${t('finder.tag')}</span>` : `<span class="muted small">${t('offer.scope.' + th.offer?.scope)} · ${th.offer?.visitDate ? t('offer.visit', { date: fmtDate(th.offer.visitDate) }) : t('offer.noDate')}</span>`}
+      <p class="preview small">${userText(th.lastMessage?.text || '')}</p></div>
+      ${th.kind === 'finder' ? '' : `<span class="fee">${money(th.offer?.baseFee, th.post?.currency)}<small>${t('offer.baseFee')}</small></span>`}
+      <a class="open" href="#inbox-${th.id}" data-close>${t('offer.open')}</a></li>`).join('')}</ul>` : `<p class="muted small">${t('offer.none')}</p>`);
 }
 
 function newPost() {
@@ -206,6 +246,7 @@ function newPost() {
         <div class="cat-grid">${CATEGORIES.map((c, i) => `<label class="cat-opt"><input type="radio" name="category" value="${c}" ${i === CATEGORIES.length - 1 ? 'checked' : ''}><span>${icon(c)}<small>${t('cat.' + c)}</small></span></label>`).join('')}</div>
         <p class="notice" id="catNotice" hidden></p>
         <label>${t('form.features')} <textarea name="description" rows="2" placeholder="${t('form.featuresPh')}"></textarea></label>
+        <label class="private">${icon('lock')}${t('form.proof')} <input name="proof" maxlength="500" placeholder="${t('form.proofPh')}" /><small>${t('form.proofHelp')}</small></label>
         <details class="tip"><summary>${icon('bulb')}${t('wiz.tipTitle')}</summary><p>${t('wiz.tip')}</p></details>
       </fieldset>
       <fieldset class="step" data-step="2" hidden>
@@ -306,39 +347,55 @@ async function loadInbox(threadId) {
   const threads = await api('/api/threads');
   $('#threadList').innerHTML = threads.length ? threads.map((th) => `
     <li data-t="${th.id}" class="${th.id === threadId ? 'active' : ''}">
-      <b>${esc(th.post?.title)}</b><br><span class="small muted">${th.role === 'owner' ? t('inbox.helper') : t('inbox.owner')}: ${esc(th.other?.name)}</span><br>
+      <b>${esc(th.post?.title)}</b> ${th.kind === 'finder' ? `<span class="badge">${t('finder.tag')}</span>` : ''}<br><span class="small muted">${th.role === 'owner' ? t('inbox.helper') : t('inbox.owner')}: ${esc(th.other?.name)}</span><br>
       <span class="small preview">${userText(th.lastMessage?.text || '')}</span></li>`).join('') : `<li class="muted">${t('inbox.empty')}</li>`;
   $('#threadList').querySelectorAll('[data-t]').forEach((el) => el.addEventListener('click', () => (location.hash = '#inbox-' + el.dataset.t)));
   if (threadId) openThread(threadId);
   else $('#chat').innerHTML = `<p class="muted">${t('inbox.select')}</p>`;
 }
 async function openThread(tid) {
-  const { thread: th, messages } = await api(`/api/threads/${tid}/messages`);
-  const d = th.deal; const cur = d?.currency || th.post?.currency;
-  const idx = d ? DEAL_STEPS.indexOf(d.status) : -1;
+  const { thread: th, proof, messages } = await api(`/api/threads/${tid}/messages`);
+  const d = th.deal, cur = d?.currency || th.post?.currency, owner = th.role === 'owner';
+  const A = (act, label, primary = true) => `<button class="${primary ? 'primary' : ''}" data-act="${act}">${label}</button>`;
+  const wait = (key) => `<span class="muted">${t(key)}</span>`;
+  let top = '';
+  if (th.kind === 'finder') top = `<p class="notice">${icon('bulb')}<span>${t(owner ? 'finder.ownerNote' : 'finder.helperNote')}</span></p>`;
+  else if (th.offer) top = `<div class="offer-card"><span class="tag">${t('offer.title')}</span><b>${t('offer.scope.' + th.offer.scope)}</b><span>${th.offer.visitDate ? t('offer.visit', { date: fmtDate(th.offer.visitDate) }) : t('offer.noDate')}</span><span>${t('offer.baseFee')} <b>${money(th.offer.baseFee, cur)}</b></span></div>`;
+  if (proof) top += `<p class="proof">${icon('lock')}<span><b>${t('proof.label')}</b> ${esc(proof)}${owner ? ` <small class="muted">(${t('proof.ownerNote')})</small>` : ''}</span></p>`;
   let dealHtml = '';
   if (d) {
-    const action =
-      th.role === 'owner' && d.status === 'proposed' ? `<button class="primary" data-act="pay">${t('deal.pay', { total: money(d.total, cur) })}</button> <button data-act="cancel">${t('btn.cancel')}</button>` :
-      th.role === 'helper' && d.status === 'proposed' ? `<span class="muted">${t('deal.waitPay')}</span> <button data-act="cancel">${t('btn.cancel')}</button>` :
-      th.role === 'helper' && d.status === 'paid' ? `<input id="trackingNo" placeholder="${t('deal.trackingPh')}" style="width:auto"> <button class="primary" data-act="ship">${t('deal.ship')}</button>` :
-      th.role === 'owner' && d.status === 'paid' ? `<span class="muted">${t('deal.waitShip')}</span>` :
-      th.role === 'owner' && d.status === 'shipped' ? `<button class="primary" data-act="confirm">${t('deal.confirm')}</button>` :
-      th.role === 'helper' && d.status === 'shipped' ? `<span class="muted">${t('deal.waitConfirm')}</span>` :
-      d.status === 'completed' ? `<b>${th.role === 'helper' ? t('deal.doneHelper', { amount: money(d.reward + d.shippingCost, cur) }) : t('deal.doneOwner')}</b>` : '';
+    const steps = ['notfound', 'closed'].includes(d.status) ? ['proposed', 'paid', 'notfound', 'closed']
+      : d.scope === 'inquire' ? ['proposed', 'paid', 'found', 'completed'] : ['proposed', 'paid', 'found', 'shipped', 'completed'];
+    const idx = steps.indexOf(d.status);
+    let action = '';
+    switch (d.status) {
+      case 'proposed': action = owner ? A('pay', t('deal.pay', { total: money(d.total, cur) })) + A('cancel', t('btn.cancel'), false) : wait('deal.waitPay') + A('cancel', t('btn.cancel'), false); break;
+      case 'paid': action = owner ? wait('deal.waitFind') : `<div class="row"><input id="foundPlace" placeholder="${t('deal.foundPlacePh')}"><input id="dealNote" placeholder="${t('deal.notePh')}"></div><div class="btns">${A('found', t('deal.markFound'))}${A('notfound', t('deal.markNotFound'), false)}</div>`; break;
+      case 'found': action = d.scope === 'inquire' ? (owner ? A('confirmInfo', t('deal.confirmInfo')) : wait('deal.waitConfirm'))
+        : owner ? wait('deal.waitShip') : `<input id="trackingNo" placeholder="${t('deal.trackingPh')}">${A('ship', t('deal.ship'))}`; break;
+      case 'shipped': action = owner ? A('confirm', t('deal.confirm')) : wait('deal.waitConfirm'); break;
+      case 'notfound': action = owner ? A('closeNotFound', t('deal.closeNotFound', { base: money(d.baseFee, cur) })) : wait('deal.waitClose'); break;
+      case 'completed': action = `<b>${owner ? t('deal.doneOwner') : t('deal.doneHelper', { amount: money(d.payout, cur) })}</b>`; break;
+      case 'closed': action = `<b>${t(owner ? 'deal.closedOwner' : 'deal.closedHelper', { payout: money(d.payout, cur), refund: money(d.refund, cur) })}</b>`; break;
+    }
+    const info = [
+      d.found && `<li><span>${t('deal.foundAt')}</span>${esc(d.found.place)}${d.found.note ? ' · ' + esc(d.found.note) : ''}</li>`,
+      d.notFoundNote && `<li><span>${t('deal.notFoundNote')}</span>${esc(d.notFoundNote)}</li>`,
+      d.trackingNo && `<li><span>${t('deal.tracking')}</span>${esc(d.trackingNo)}</li>`,
+    ].filter(Boolean).join('');
     dealHtml = `<div class="deal">
-      <b>${t('deal.title')}</b> · ${t('deal.breakdown', { reward: money(d.reward, cur), ship: money(d.shippingCost, cur), fee: money(d.fee, cur), total: money(d.total, cur) })}
-      ${d.trackingNo ? `<br>${t('deal.tracking')}: ${esc(d.trackingNo)}` : ''}
-      <div class="steps">${DEAL_STEPS.map((s, i) => `<span class="${i <= idx ? 'on' : ''}">${t('deal.' + s)}</span>`).join('')}</div>${action}</div>`;
-  } else if (th.role === 'owner' && th.post?.status === 'open') {
-    dealHtml = `<div class="deal">${t('deal.ask')}
-      <div class="row" style="margin-top:6px"><label>${t('deal.reward')} <input id="dReward" type="number" value="${th.post.reward}" min="0"></label>
-      <label>${t('deal.shipCost')} <input id="dShip" type="number" value="0" min="0"></label></div>
-      <button class="primary" data-act="start">${t('deal.start')}</button></div>`;
+      <div class="deal-head"><b>${t('deal.title')}</b><span>${t('deal.breakdown', { base: money(d.baseFee, cur), reward: money(d.reward, cur), ship: money(d.shippingCost, cur), fee: money(d.fee, cur), total: money(d.total, cur) })}</span></div>
+      <div class="steps">${steps.map((s, i) => `<span class="${i <= idx ? 'on' : ''}">${t('deal.' + s)}</span>`).join('')}</div>
+      ${info ? `<ul class="deal-info">${info}</ul>` : ''}<div class="deal-act">${action}</div></div>`;
+  } else if (owner && th.kind !== 'finder' && th.post?.status === 'open') {
+    dealHtml = `<div class="deal"><b>${t('deal.ask')}</b>
+      <div class="row" style="margin-top:8px"><label>${t('deal.reward')} <input id="dReward" type="number" value="${th.post.reward}" min="0"></label>
+      ${th.offer?.scope === 'inquire' ? '' : `<label>${t('deal.shipCost')} <input id="dShip" type="number" value="0" min="0"></label>`}</div>
+      <p class="muted small" style="margin-top:-6px">${t('deal.askNote')}</p>${A('start', t('deal.start'))}</div>`;
   }
   $('#chat').innerHTML = `
     <div><b>${esc(th.post?.title)}</b> · ${t('chat.with', { name: esc(th.other?.name) })}</div>
-    ${dealHtml}
+    ${top}${dealHtml}
     <div class="msgs">${messages.map((m) => {
       const mine = m.senderId === me.id;
       return `<div class="msg ${mine ? 'me' : ''}">${userText(m.text)}<time>${fmtTime(m.createdAt)}${mine ? '' : ' · ' + translateLink(m.text)}</time></div>`;
@@ -354,10 +411,10 @@ async function openThread(tid) {
   $('#chat').querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', async () => {
     const act = b.dataset.act;
     try {
-      if (act === 'start') await api(`/api/threads/${tid}/deal`, { method: 'POST', body: { reward: $('#dReward').value, shippingCost: $('#dShip').value } });
+      if (act === 'start') await api(`/api/threads/${tid}/deal`, { method: 'POST', body: { reward: $('#dReward').value, shippingCost: $('#dShip')?.value } });
       else {
         if (act === 'pay' && !confirm(t('deal.demoConfirm'))) return;
-        await api(`/api/threads/${tid}/deal/${act}`, { method: 'POST', body: { trackingNo: $('#trackingNo')?.value } });
+        await api(`/api/threads/${tid}/deal/${act}`, { method: 'POST', body: { trackingNo: $('#trackingNo')?.value, foundPlace: $('#foundPlace')?.value, note: $('#dealNote')?.value } });
       }
       loadInbox(tid);
     } catch (err) { toast(err.message); }

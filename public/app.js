@@ -15,6 +15,7 @@ async function api(url, opts = {}) {
   return data;
 }
 function toast(msg) {
+  document.querySelectorAll('.toast').forEach((x) => x.remove());
   const el = document.createElement('div'); el.className = 'toast'; el.textContent = msg;
   document.body.append(el); setTimeout(() => el.remove(), 2600);
 }
@@ -98,6 +99,11 @@ function ago(iso) {
   if (s < 86400) return rtf.format(-Math.round(s / 3600), 'hour');
   return rtf.format(-Math.round(s / 86400), 'day');
 }
+function geoKm(a, b) {
+  const R = 6371, r = (d) => (d * Math.PI) / 180, dLat = r(b.lat - a.lat), dLng = r(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
 const fmtKm = (d) => (d < 10 ? d.toLocaleString(locale(), { maximumFractionDigits: 1 }) : Math.round(d).toLocaleString(locale())) + 'km';
 function renderChips() {
   $('#chips').innerHTML = ['', ...CATEGORIES].map((c) =>
@@ -105,9 +111,13 @@ function renderChips() {
   $('#chips').querySelectorAll('[data-cat]').forEach((b) => b.addEventListener('click', () => { filters.category = b.dataset.cat; renderChips(); loadPosts(); }));
 }
 async function loadPosts() {
-  const p = new URLSearchParams({ q: $('#q').value, category: filters.category, sort: filters.sort });
-  if (filters.near) { p.set('lat', filters.near.lat); p.set('lng', filters.near.lng); }
+  // 현재 위치는 서버로 보내지 않음(위치정보 보호): 목록을 받은 뒤 이 기기 안에서만 거리를 계산·정렬
+  const p = new URLSearchParams({ q: $('#q').value, category: filters.category, sort: filters.sort === 'near' ? 'new' : filters.sort });
   const posts = await api('/api/posts?' + p);
+  if (filters.near) {
+    posts.forEach((x) => (x.distanceKm = Math.round(geoKm(filters.near, x) * 10) / 10));
+    if (filters.sort === 'near') posts.sort((a, b) => a.distanceKm - b.distanceKm);
+  }
   markers.clearLayers(); markerById = {};
   posts.forEach((x) => {
     markerById[x.id] = L.marker([x.lat, x.lng], { icon: inkIcon(x.category) })
@@ -141,7 +151,7 @@ function findNearMe() {
   if (!navigator.geolocation) return toast(t('toast.noGeo'));
   navigator.geolocation.getCurrentPosition((pos) => {
     filters.near = { lat: pos.coords.latitude, lng: pos.coords.longitude }; filters.sort = 'near'; $('#sort').value = 'near';
-    map.setView([filters.near.lat, filters.near.lng], 10); loadPosts();
+    map.setView([filters.near.lat, filters.near.lng], 10); loadPosts(); toast(t('toast.locLocal'));
   }, () => toast(t('toast.noGeo')), { timeout: 8000 });
 }
 
@@ -155,6 +165,7 @@ async function showPost(postId) {
     <h3 class="post-title">${esc(x.title)}</h3>
     <p class="muted post-meta">${icon('pin')}${esc(x.placeName)}${x.country ? ', ' + esc(x.country) : ''} ${x.lostDate ? '· ' + t('post.lostOn', { date: fmtDate(x.lostDate) }) : ''} · ${t('post.by', { name: esc(x.owner?.name) })}</p>
     ${foreign ? `<p>${translateLink(allText, 'strong')} <span class="muted small">(${LANGS[x.lang] || x.lang})</span></p>` : ''}
+    ${!mine && (x.category === 'id' || x.category === 'pet') ? `<p class="notice">${icon('bulb')}<span>${t(x.category === 'id' ? 'notice.idHelper' : 'notice.petHelper')}</span></p>` : ''}
     ${x.photos.length ? `<div class="photos">${x.photos.map((p) => `<img src="${esc(p)}">`).join('')}</div>` : ''}
     ${x.reward ? `<div class="stamp big"><span>${t('deal.reward')}</span><b>${money(x.reward, x.currency)}</b></div>` : ''}
     ${x.description ? `<h4>${t('post.features')}</h4><p>${userText(x.description)}</p>` : ''}
@@ -172,6 +183,7 @@ async function showPost(postId) {
 function startHelp(x) {
   openModal(`<h3>${t('help.title', { title: esc(x.title) })}</h3>
     <p class="muted small">${t('help.desc')}</p>
+    <p class="notice small">${icon('bulb')}<span>${t('help.legal')} <a href="#rules" data-close>${t('rules.nav')}</a></span></p>
     <form id="helpForm"><textarea name="text" rows="5" required placeholder="${t('help.ph')}"></textarea>
     <div class="row" style="margin-top:8px"><button class="primary">${t('btn.send')}</button><button type="button" data-close>${t('btn.cancel')}</button></div></form>`);
   $('#helpForm').addEventListener('submit', async (e) => {
@@ -192,6 +204,7 @@ function newPost() {
         <label>${t('form.itemName')} <input name="title" maxlength="80" placeholder="${t('form.whatPh')}" autofocus /></label>
         <div class="field-label">${t('form.category')}</div>
         <div class="cat-grid">${CATEGORIES.map((c, i) => `<label class="cat-opt"><input type="radio" name="category" value="${c}" ${i === CATEGORIES.length - 1 ? 'checked' : ''}><span>${icon(c)}<small>${t('cat.' + c)}</small></span></label>`).join('')}</div>
+        <p class="notice" id="catNotice" hidden></p>
         <label>${t('form.features')} <textarea name="description" rows="2" placeholder="${t('form.featuresPh')}"></textarea></label>
         <details class="tip"><summary>${icon('bulb')}${t('wiz.tipTitle')}</summary><p>${t('wiz.tip')}</p></details>
       </fieldset>
@@ -217,6 +230,7 @@ function newPost() {
           <label>${t('form.currency')} <select name="currency">${['KRW', 'USD', 'EUR', 'JPY', 'CNY', 'GBP'].map((c) => `<option ${c === curDefault ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
         </div>
         <p class="note">${icon('lock')}<span>${t('form.feeNote', { fee: Math.round(feeRate * 100) })}</span></p>
+        <label class="agree"><input type="checkbox" name="agree" value="1" /> <span>${t('rules.agree')} <a href="#rules" target="_blank" rel="noopener">${t('rules.nav')}</a></span></label>
       </fieldset>
       <input type="hidden" name="lat" /><input type="hidden" name="lng" /><input type="hidden" name="lang" value="${lang}" />
       <div class="wiz-nav"><button type="button" id="wizPrev">${t('btn.prev')}</button><button class="primary" id="wizNext">${t('btn.next')}</button></div>
@@ -244,6 +258,11 @@ function newPost() {
     if (!f.country.value) f.country.value = hit.name.split(',').pop().trim();
   });
   $('#placeQ').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('#placeBtn').click(); } });
+  f.querySelectorAll('[name=category]').forEach((r) => r.addEventListener('change', () => {
+    const c = f.category.value, box = $('#catNotice');
+    box.hidden = !(c === 'id' || c === 'pet');
+    if (!box.hidden) box.innerHTML = icon('bulb') + `<span>${t(c === 'id' ? 'notice.id' : 'notice.pet')}</span>`;
+  }));
   $('#photoIn').addEventListener('change', (e) => {
     $('#photoPrev').innerHTML = [...e.target.files].slice(0, 4).map((file) => `<img src="${URL.createObjectURL(file)}" alt="">`).join('');
   });
@@ -252,6 +271,7 @@ function newPost() {
     if (step === 1 && !f.title.value.trim()) { f.title.focus(); return toast(t('wiz.needTitle')); }
     if (step === 2 && !f.lat.value) return toast(t('toast.pickLocation'));
     if (step < 3) { step++; return show(); }
+    if (!f.agree.checked) return toast(t('rules.needAgree'));
     try { const p = await api('/api/posts', { method: 'POST', body: new FormData(f) }); modal.close(); toast(t('toast.posted')); await loadPosts(); map.setView([p.lat, p.lng], 12); }
     catch (err) { toast(err.message); }
   });
@@ -344,6 +364,15 @@ async function openThread(tid) {
   }));
 }
 
+// ---------- 이용 규칙 ----------
+function renderRules() {
+  const list = (key) => '<ul>' + t(key, { fee: Math.round(feeRate * 100) }).split('\n').map((li) => `<li>${li}</li>`).join('') + '</ul>';
+  $('#view-rules').innerHTML = `<article class="rules">
+    <p class="kicker">${t('rules.nav')}</p><h2>${t('rules.title')}</h2><p class="lede">${t('rules.intro')}</p>
+    ${['helper', 'ban', 'money', 'priv'].map((k) => `<section><h3>${t('rules.' + k + 'T')}</h3>${list('rules.' + k)}</section>`).join('')}
+    <p class="muted small">${t('rules.draft')}</p></article>`;
+}
+
 // ---------- 라우팅 ----------
 async function route() {
   // 주소 형식: #map, #trips, #inbox-<대화ID> (하이픈만 사용해 어디서든 링크가 유지되게)
@@ -356,6 +385,7 @@ async function route() {
   if (view === 'map') { setTimeout(() => map.invalidateSize(), 50); loadPosts(); }
   if (view === 'trips') loadTrips();
   if (view === 'inbox') loadInbox(arg);
+  if (view === 'rules') renderRules();
 }
 
 (async function init() {

@@ -117,23 +117,18 @@ app.get('/api/me', (req, res) => res.json(publicUser(req.user) || null));
 
 // ----- 분실물 게시글 -----
 app.get('/api/posts', (req, res) => {
-  const { q, category, status = 'open', lat, lng, radiusKm } = req.query;
+  const { q, category, status = 'open' } = req.query;
   let list = db.posts.filter((p) => (status === 'all' ? true : p.status === status));
   if (category) list = list.filter((p) => p.category === category);
   if (q) {
     const k = String(q).toLowerCase();
     list = list.filter((p) => [p.title, p.description, p.story, p.placeName, p.country].join(' ').toLowerCase().includes(k));
   }
-  let out = list.map(publicPost);
-  const c = lat && lng ? { lat: +lat, lng: +lng } : null;
-  if (c && !Number.isNaN(c.lat) && !Number.isNaN(c.lng)) {
-    out.forEach((p) => (p.distanceKm = Math.round(distanceKm(c, p) * 10) / 10));
-    if (radiusKm) out = out.filter((p) => p.distanceKm <= +radiusKm);
-  }
-  // 정렬: new(최신순, 기본) | reward(사례금 높은순) | near(가까운순, lat/lng 필요)
+  // 기기의 현재 위치는 받지 않음: 거리 계산·가까운순 정렬은 브라우저에서만 처리 (위치정보 보호)
+  const out = list.map(publicPost);
+  // 정렬: new(최신순, 기본) | reward(사례금 높은순)
   const { sort } = req.query;
   if (sort === 'reward') out.sort((a, b) => b.reward - a.reward || b.createdAt.localeCompare(a.createdAt));
-  else if (sort === 'near' && out[0]?.distanceKm != null) out.sort((a, b) => a.distanceKm - b.distanceKm);
   else out.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   res.json(out);
 });

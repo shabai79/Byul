@@ -82,3 +82,12 @@ test('모든 언어 사전이 같은 키를 가짐', () => {
   const base = Object.keys(MESSAGES.ko).sort();
   for (const l of Object.keys(MESSAGES)) assert.deepEqual(Object.keys(MESSAGES[l]).sort(), base, l + ' 사전의 키가 다릅니다');
 });
+
+test('서버는 기기 위치를 받지 않음 (거리 계산은 브라우저에서만)', async () => {
+  const server = app.listen(0);
+  const base = `http://localhost:${server.address().port}`;
+  const list = await (await fetch(base + '/api/posts?lat=37.5&lng=127&sort=near')).json();
+  assert.ok(Array.isArray(list));
+  assert.ok(list.every((p) => p.distanceKm === undefined));
+  server.close();
+});

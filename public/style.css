@@ -265,3 +265,20 @@ legend { font-family: var(--serif); font-size: 26px; font-weight: 600; margin-bo
   .inbox { grid-template-columns: 1fr; height: auto; } .threads { max-height: 220px; } .chat { height: 70vh; }
   .msg { max-width: 86%; }
 }
+
+/* ---------- 법적 안내·이용 규칙 ---------- */
+.notice { display: flex; gap: 8px; align-items: flex-start; background: var(--gold-soft); border-left: 2px solid var(--gold); padding: 10px 14px; margin: 0 0 16px; font-size: 14px; line-height: 1.6; color: var(--ink-2); }
+.notice .ico { margin-top: 3px; color: var(--gold-ink); }
+.notice[hidden] { display: none; }
+.agree { display: flex; gap: 10px; align-items: flex-start; margin: 14px 0 0; font-size: 15px; font-weight: 500; color: var(--ink); cursor: pointer; }
+.agree input { width: 18px; height: 18px; margin: 3px 0 0; flex-shrink: 0; accent-color: var(--ink); }
+.rules { max-width: 720px; padding: 40px 0 20px; }
+.rules h2 { font-size: clamp(26px, 3vw, 36px); margin-bottom: 12px; }
+.rules section { border-top: 1px solid var(--line); padding: 18px 0 6px; margin-top: 18px; }
+.rules h3 { font-family: var(--serif); font-weight: 600; font-size: 20px; }
+.rules ul { margin: 8px 0 0; padding-left: 1.2em; } .rules li { margin-bottom: 10px; line-height: 1.7; }
+.rules li::marker { color: var(--gold); }
+.site-foot { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline; max-width: 1320px; margin: 0 auto; padding: 22px 32px 40px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.site-foot span:first-child { font-family: "Fraunces", var(--serif); font-weight: 600; color: var(--ink); font-size: 15px; }
+.site-foot a { color: var(--ink-2); }
+@media (max-width: 820px) { .site-foot { padding: 18px 16px 100px; } .rules { padding-top: 24px; } }

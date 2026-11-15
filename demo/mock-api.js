@@ -100,9 +100,7 @@
       if (query.category) list = list.filter((p) => p.category === query.category);
       if (query.q) { const k = query.q.toLowerCase(); list = list.filter((p) => [p.title, p.description, p.story, p.placeName, p.country].join(' ').toLowerCase().includes(k)); }
       let out = list.map(publicPost);
-      if (query.lat && query.lng) out.forEach((p) => (p.distanceKm = Math.round(distanceKm({ lat: +query.lat, lng: +query.lng }, p) * 10) / 10));
       if (query.sort === 'reward') out.sort((a, b) => b.reward - a.reward);
-      else if (query.sort === 'near' && out[0]?.distanceKm != null) out.sort((a, b) => a.distanceKm - b.distanceKm);
       else out.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       return ok(out);
     }
